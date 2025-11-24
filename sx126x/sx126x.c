@@ -1,3 +1,11 @@
+/*
+ *  SPDX-License-Identifier: LGPL-2.1-or-later
+ *
+ *  SX126x
+ *
+ *  Copyright (c) 2025 Belousov Oleg aka R1CBU
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>

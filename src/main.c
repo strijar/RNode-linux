@@ -1,7 +1,16 @@
+/*
+ *  SPDX-License-Identifier: LGPL-2.1-or-later
+ *
+ *  RNode Linux
+ *
+ *  Copyright (c) 2025 Belousov Oleg aka R1CBU
+ */
+
 #include <unistd.h>
 #include <stdio.h>
 
 #include "sx126x.h"
+#include "tcp.h"
 
 /* For Lora board RNS-Gate */
 
@@ -63,6 +72,8 @@ int main() {
         return 1;
     }
 
+    tcp_init(7633);
+
     sx126x_set_dio3_txco_ctrl(DIO3_OUTPUT_1_8, TXCO_DELAY_10);
     sx126x_set_freq(915000000);
     sx126x_set_tx_power(17, TX_POWER_SX1262);
@@ -79,7 +90,7 @@ int main() {
     sx126x_request(RX_CONTINUOUS);
 
     while (true) {
-        sleep(5);
+        tcp_read();
     }
 
     return 0;
