@@ -10,6 +10,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 void queue_init();
 void queue_push(const uint8_t *buf, size_t len);
+
+void queue_medium_state(bool free);

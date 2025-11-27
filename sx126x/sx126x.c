@@ -111,7 +111,8 @@ static struct gpiod_line    *busy_line = NULL;
 static struct gpiod_line    *dio1_line = NULL;
 static int                  spi_fd;
 
-static uint8_t              buffer_index = 0;
+static uint8_t              fifo_tx_addr_ptr = 0;
+static uint8_t              fifo_rx_addr_ptr = 0;
 static uint8_t              payload_tx_rx = 32;
 
 static header_type_t        save_header_type = HEADER_EXPLICIT;
@@ -122,6 +123,7 @@ static state_t              state = STATE_IDLE;
 
 static sx126x_rx_done_callback_t    rx_done_callback = NULL;
 static sx126x_tx_done_callback_t    tx_done_callback = NULL;
+static sx126x_medium_callback_t     medium_callback = NULL;
 
 static void wait_on_busy() {
     while (gpiod_line_get_value(busy_line) == 1) {
@@ -207,24 +209,26 @@ static bool write_reg(uint16_t reg, const uint8_t *buf, size_t len) {
     return write_bytes(msg, len + 3);
 }
 
-static bool write_buffer(uint8_t offset, const uint8_t *buf, size_t len) {
+static bool write_buffer(const uint8_t *buf, size_t len) {
     uint8_t msg[len + 2];
 
     msg[0] = 0x0E;
-    msg[1] = offset;
+    msg[1] = fifo_tx_addr_ptr;
 
-    for (size_t i = 0; i < len; i++)
+    for (size_t i = 0; i < len; i++) {
         msg[i + 2] = buf[i];
+        fifo_tx_addr_ptr++;
+    }
 
     return write_bytes(msg, len + 2);
 }
 
-static bool read_buffer(uint8_t offset, uint8_t *buf, size_t len) {
+static bool read_buffer(uint8_t *buf, size_t len) {
     uint8_t msg[2];
     uint8_t ans[len + 1];
 
     msg[0] = 0x1E;
-    msg[1] = offset;
+    msg[1] = fifo_rx_addr_ptr;
 
     write_read_bytes(msg, 2, ans, len + 1);
     memcpy(buf, &ans[1], len);
@@ -302,14 +306,15 @@ static uint16_t get_irq_status() {
     return (ans[1] << 8) | ans[2];
 }
 
-static void get_rx_buffer_status(uint8_t *rx_len, uint8_t *buffer_ptr) {
+static uint8_t get_rx_buffer_status() {
     uint8_t msg[] = { 0x13 };
     uint8_t ans[] = { 0, 0, 0 };
 
     write_read_bytes(msg, sizeof(msg), ans, sizeof(ans));
 
-    *rx_len = ans[1];
-    *buffer_ptr * ans[2];
+    fifo_rx_addr_ptr = ans[2];
+
+    return ans[1];
 }
 
 static void get_packet_status(uint8_t *rssi, int8_t *snr, uint8_t *signal_rssi) {
@@ -352,29 +357,57 @@ static void * irq_worker(void *p) {
             }
 
             if (event.event_type == GPIOD_LINE_EVENT_RISING_EDGE) {
-                uint16_t status = get_irq_status();
+                uint16_t    status = get_irq_status();
+                bool        crc_ok = true;
 
-                switch (status) {
-                    case IRQ_RX_DONE:
-                        get_rx_buffer_status(&payload_tx_rx, &buffer_index);
+                if (status & IRQ_CRC_ERR) {
+                    crc_ok = false;
+                    clear_irq_status(IRQ_CRC_ERR);
+                }
+
+                if (status & IRQ_PREAMBLE_DETECTED) {
+                    if (medium_callback) {
+                        medium_callback(false);
+                    }
+                    clear_irq_status(IRQ_PREAMBLE_DETECTED);
+                }
+
+                if (status & IRQ_HEADER_ERR) {
+                    if (medium_callback) {
+                        medium_callback(true);
+                    }
+                    clear_irq_status(IRQ_HEADER_ERR);
+                }
+
+                if (status & IRQ_RX_DONE) {
+                    if (crc_ok) {
+                        payload_tx_rx = get_rx_buffer_status();
 
                         if (rx_done_callback) {
                             rx_done_callback(payload_tx_rx);
                         }
 
-                        if (state == STATE_RX_CONTINUOUS) {
-                            clear_irq_status(IRQ_ALL);
-                        }
-                        break;
+                    }
 
-                    case IRQ_TX_DONE:
-                        if (tx_done_callback) {
-                            tx_done_callback();
-                        }
-                        break;
+                    if (state == STATE_RX_CONTINUOUS) {
+                        clear_irq_status(IRQ_RX_DONE);
+                    }
 
-                    default:
-                        break;
+                    if (medium_callback) {
+                        medium_callback(true);
+                    }
+                }
+
+                if (status & IRQ_TX_DONE) {
+                    if (tx_done_callback) {
+                        tx_done_callback();
+                    }
+
+                    if (medium_callback) {
+                        medium_callback(true);
+                    }
+
+                    clear_irq_status(IRQ_TX_DONE);
                 }
             }
         }
@@ -474,6 +507,10 @@ void sx126x_set_tx_done_callback(sx126x_tx_done_callback_t callback) {
     tx_done_callback = callback;
 }
 
+void sx126x_set_medium_callback(sx126x_medium_callback_t callback) {
+    medium_callback = callback;
+}
+
 bool sx126x_begin() {
     gpiod_line_set_value(rst_line, 0);
     usleep(10000);
@@ -491,6 +528,11 @@ bool sx126x_begin() {
     if (!set_packet_type(LORA_MODEM)) {
         return false;
     }
+
+    uint8_t base_addr[] = { 0x8F, 0, 0 };
+
+    wait_on_busy();
+    write_bytes(base_addr, sizeof(base_addr));
 
     return true;
 }
@@ -627,21 +669,20 @@ void sx126x_set_sync_word(uint16_t x) {
 }
 
 void sx126x_begin_packet() {
+    if (medium_callback) {
+        medium_callback(false);
+    }
+
     payload_tx_rx = 0;
-
-    uint8_t base_addr[] = { 0x8F, buffer_index, (buffer_index + 0xFF) % 0xFF };
-
-    wait_on_busy();
-    write_bytes(base_addr, sizeof(base_addr));
+    fifo_tx_addr_ptr = 0;
 
     /* TODO rx/tx pin control */
 }
 
 void sx126x_write(const uint8_t *buf, uint8_t len) {
     wait_on_busy();
-    write_buffer(buffer_index, buf, len);
+    write_buffer(buf, len);
 
-    buffer_index = (buffer_index + len) % 256;
     payload_tx_rx += len;
 }
 
@@ -660,7 +701,7 @@ void sx126x_end_packet() {
 }
 
 void sx126x_request(uint32_t timeout) {
-    uint16_t mask = IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_HEADER_ERR | IRQ_CRC_ERR;
+    uint16_t mask = IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_PREAMBLE_DETECTED;
 
     wait_on_busy();
     irq_setup(mask, mask, 0, 0);
@@ -676,6 +717,7 @@ void sx126x_request(uint32_t timeout) {
         }
     }
 
+
     wait_on_busy();
     set_rx(timeout);
 }
@@ -686,9 +728,7 @@ uint8_t sx126x_available() {
 
 void sx126x_read(uint8_t *buf, uint16_t len) {
     wait_on_busy();
-    read_buffer(buffer_index, buf, len);
-
-    buffer_index = (buffer_index + len) % 256;
+    read_buffer(buf, len);
 
     if (payload_tx_rx > len) {
         payload_tx_rx -= len;

@@ -18,4 +18,6 @@ void rnode_from_channel(const uint8_t *buf, size_t len);
 void rnode_signal_stat(uint8_t rssi, int8_t snr, uint8_t signal_rssi);
 void rnode_from_air(const uint8_t *buf, size_t len);
 void rnode_to_air(const uint8_t *buf, size_t len);
+
 void rnode_tx_done();
+void rnode_rx_done(uint16_t len);

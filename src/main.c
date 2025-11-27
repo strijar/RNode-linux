@@ -26,21 +26,6 @@
 #define PIN_RX_EN   2
 #define PIN_TX_EN   18
 
-void rx_done_callback(uint16_t len) {
-    uint8_t buf[len];
-
-    if (len > 0) {
-        uint8_t rssi, signal_rssi;
-        int8_t snr;
-
-        sx126x_packet_signal_raw(&rssi, &snr, &signal_rssi);
-        rnode_signal_stat(rssi, snr, signal_rssi);
-
-        sx126x_read(buf, len);
-        rnode_from_air(buf, len);
-    }
-}
-
 int main() {
     if (!sx126x_init_spi(SPI_DEV, PIN_PORT, SPI_PIN_CS)) {
         printf("Err: SPI init\n");
@@ -78,8 +63,11 @@ int main() {
     sx126x_set_lora_packet(HEADER_EXPLICIT, 18, 15, CRC_ON);
     sx126x_set_sync_word(0x1424);
 
-    sx126x_set_rx_done_callback(rx_done_callback);
+    sx126x_set_rx_done_callback(rnode_rx_done);
     sx126x_set_tx_done_callback(rnode_tx_done);
+    sx126x_set_medium_callback(queue_medium_state);
+
+    queue_medium_state(true);
 
     printf("Ready\n");
 

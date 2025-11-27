@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "rnode.h"
 #include "kiss.h"
@@ -373,5 +374,20 @@ void rnode_tx_done() {
         len_tx = 0;
     } else {
         sx126x_request(RX_CONTINUOUS);
+    }
+}
+
+void rnode_rx_done(uint16_t len) {
+    uint8_t buf[len];
+
+    if (len > 0) {
+        uint8_t rssi, signal_rssi;
+        int8_t snr;
+
+        sx126x_packet_signal_raw(&rssi, &snr, &signal_rssi);
+        sx126x_read(buf, len);
+
+        rnode_signal_stat(rssi, snr, signal_rssi);
+        rnode_from_air(buf, len);
     }
 }
