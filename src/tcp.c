@@ -71,14 +71,11 @@ void tcp_read() {
             break;
         }
 
-        dump("Data in", buf_in, res);
         kiss_decode(buf_in, res);
     }
 }
 
 void tcp_send(char *buf, size_t len) {
-    dump("Data out", buf, len);
-
     if (client_fd) {
         send(client_fd, buf, len, 0);
     }

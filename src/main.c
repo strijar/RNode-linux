@@ -56,12 +56,6 @@ int main() {
     tcp_init(7633);
 
     sx126x_set_dio3_txco_ctrl(DIO3_OUTPUT_1_8, TXCO_DELAY_10);
-    sx126x_set_freq(915000000);
-    sx126x_set_tx_power(17, TX_POWER_SX1262);
-
-    sx126x_set_lora_modulation(7, BW_125000, CR_4_5, LDRO_OFF);
-    sx126x_set_lora_packet(HEADER_EXPLICIT, 18, 15, CRC_ON);
-    sx126x_set_sync_word(0x1424);
 
     sx126x_set_rx_done_callback(rnode_rx_done);
     sx126x_set_tx_done_callback(rnode_tx_done);
@@ -69,9 +63,7 @@ int main() {
 
     queue_medium_state(true);
 
-    printf("Ready\n");
-
-    sx126x_request(RX_CONTINUOUS);
+    printf("Init\n");
 
     while (true) {
         tcp_read();

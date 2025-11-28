@@ -123,6 +123,11 @@ static uint8_t  seq_tx = SEQ_UNSET;
 static uint8_t  buf_tx[SINGLE_MTU];
 static size_t   len_tx = 0;
 
+static uint32_t current_freq;
+static bw_t     current_bw;
+static cr_t     current_cr;
+static uint8_t  current_tx_power;
+static uint8_t  current_sf;
 
 /* * */
 
@@ -151,36 +156,119 @@ static void ans_mcu(const uint8_t *param) {
 }
 
 static void ans_frequency(const uint8_t *param) {
-    uint8_t ans[] = { CMD_FREQUENCY, param[0], param[1], param[2], param[3] };
+    uint32_t freq = (param[0] << 24) | (param[1] << 16) | (param[2] << 8) | param[3];
+
+    if (freq != 0) {
+        current_freq = freq;
+    }
+
+    uint8_t ans[] = { CMD_FREQUENCY, current_freq >> 24, current_freq >> 16, current_freq >> 8, current_freq };
 
     kiss_encode(ans, sizeof(ans));
 }
 
 static void ans_bandwidth(const uint8_t *param) {
-    uint8_t ans[] = { CMD_BANDWIDTH, param[0], param[1], param[2], param[3] };
+    uint32_t bw = (param[0] << 24) | (param[1] << 16) | (param[2] << 8) | param[3];
+
+    switch (bw) {
+        case 7800:      current_bw = BW_7800;   break;
+        case 10400:     current_bw = BW_10400;  break;
+        case 15600:     current_bw = BW_15600;  break;
+        case 20800:     current_bw = BW_20800;  break;
+        case 31250:     current_bw = BW_31250;  break;
+        case 41700:     current_bw = BW_41700;  break;
+        case 62500:     current_bw = BW_62500;  break;
+        case 125000:    current_bw = BW_125000; break;
+        case 250000:    current_bw = BW_250000; break;
+        case 500000:    current_bw = BW_500000; break;
+
+        default:
+            break;
+    }
+
+    switch (current_bw) {
+        case BW_7800:   bw = 7800;      break;
+        case BW_10400:  bw = 10400;     break;
+        case BW_15600:  bw = 15600;     break;
+        case BW_20800:  bw = 20800;     break;
+        case BW_31250:  bw = 31250;     break;
+        case BW_41700:  bw = 41700;     break;
+        case BW_62500:  bw = 62500;     break;
+        case BW_125000: bw = 125000;    break;
+        case BW_250000: bw = 250000;    break;
+        case BW_500000: bw = 500000;    break;
+    }
+
+    uint8_t ans[] = { CMD_BANDWIDTH, bw >> 24, bw >> 16, bw >> 8, bw };
 
     kiss_encode(ans, sizeof(ans));
 }
 
 static void ans_txpower(const uint8_t *param) {
-    uint8_t ans[] = { CMD_TXPOWER, param[0] };
+    uint8_t db = param[0];
+
+    if (db) {
+        current_tx_power = db;
+    }
+
+    uint8_t ans[] = { CMD_TXPOWER, current_tx_power };
 
     kiss_encode(ans, sizeof(ans));
 }
 
 static void ans_sf(const uint8_t *param) {
-    uint8_t ans[] = { CMD_SF, param[0] };
+    uint8_t sf = param[0];
+
+    if (sf) {
+        current_sf = sf;
+    }
+
+    uint8_t ans[] = { CMD_SF, current_sf };
 
     kiss_encode(ans, sizeof(ans));
 }
 
 static void ans_cr(const uint8_t *param) {
-    uint8_t ans[] = { CMD_CR, param[0] };
+    uint8_t cr = param[0];
+
+    switch (cr) {
+        case 4: current_cr = CR_4_4; break;
+        case 5: current_cr = CR_4_5; break;
+        case 6: current_cr = CR_4_6; break;
+        case 7: current_cr = CR_4_7; break;
+        case 8: current_cr = CR_4_8; break;
+
+        default:
+            break;
+    }
+
+    switch (current_cr) {
+        case CR_4_4:    cr = 4; break;
+        case CR_4_5:    cr = 5; break;
+        case CR_4_6:    cr = 6; break;
+        case CR_4_7:    cr = 7; break;
+        case CR_4_8:    cr = 8; break;
+    }
+
+    uint8_t ans[] = { CMD_CR, cr };
 
     kiss_encode(ans, sizeof(ans));
 }
 
 static void ans_radio_state(const uint8_t *param) {
+    if (param[0] == 1) {
+        sx126x_set_freq(915000000);
+        sx126x_set_tx_power(current_tx_power, TX_POWER_SX1262);
+
+        sx126x_set_lora_modulation(current_sf, current_bw, current_cr, LDRO_OFF);
+        sx126x_set_lora_packet(HEADER_EXPLICIT, 18, 15, CRC_ON);
+        sx126x_set_sync_word(0x1424);
+
+        sx126x_request(RX_CONTINUOUS);
+
+        printf("Radio on\n");
+    }
+
     uint8_t ans[] = { CMD_RADIO_STATE, param[0] };
 
     kiss_encode(ans, sizeof(ans));
@@ -189,8 +277,6 @@ static void ans_radio_state(const uint8_t *param) {
 /* * */
 
 void rnode_from_channel(const uint8_t *buf, size_t len) {
-    dump("RNode", buf, len);
-
     uint8_t cmd = buf[0];
 
     buf++;
@@ -270,7 +356,7 @@ void rnode_from_air(const uint8_t *buf, size_t len) {
     /* We read the 1-byte header and extract    */
     /* packet sequence number and split flags   */
 
-    dump("RNode from air", buf, len);
+    printf("From air %i\n", len);
 
     uint8_t header = *buf;
     bool    split = header & FLAG_SPLIT;
