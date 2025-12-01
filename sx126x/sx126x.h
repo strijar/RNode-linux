@@ -25,12 +25,6 @@ typedef enum {
 } dio3_delay_t;
 
 typedef enum {
-    TX_POWER_SX1261 = 0x01,
-    TX_POWER_SX1262 = 0x02,
-    TX_POWER_SX1268 = 0x08
-} dev_sel_t;
-
-typedef enum {
     HEADER_EXPLICIT = 0x00,
     HEADER_IMPLICIT = 0x01
 } header_type_t;
@@ -105,7 +99,7 @@ bool sx126x_begin();
 
 void sx126x_set_dio3_txco_ctrl(uint8_t voltage, uint16_t delay);
 void sx126x_set_freq(uint64_t x);
-void sx126x_set_tx_power(uint8_t db, dev_sel_t dev);
+void sx126x_set_tx_power(uint8_t db);
 void sx126x_set_lora_modulation(uint8_t sf, bw_t bw, cr_t cr, ldro_t ldro);
 void sx126x_set_lora_packet(header_type_t header_type, uint8_t preamble_len, uint8_t payload_len, crc_t crc);
 void sx126x_set_sync_word(uint16_t x);

@@ -707,63 +707,22 @@ void sx126x_set_freq(uint64_t x) {
     write_bytes(msg, sizeof(msg));
 }
 
-void sx126x_set_tx_power(uint8_t db, dev_sel_t dev) {
+void sx126x_set_tx_power(uint8_t db) {
     if (db > 22) {
         db = 22;
-    } else if (db > 15 && dev == TX_POWER_SX1261) {
-        db = 15;
     }
 
-    uint8_t duty_cycle = 0x00;
-    uint8_t hp_max = 0x00;
-    uint8_t dev_sel = 0x00;
-    uint8_t power = 0x0E;
-
-    if (dev == TX_POWER_SX1261) {
-        dev_sel = 0x01;
-    }
-
-    if (db == 22) {
-        duty_cycle = 0x04;
-        hp_max = 0x07;
-        power = 0x16;
-    } else if (db >= 20) {
-        duty_cycle = 0x03;
-        hp_max = 0x05;
-        power = 0x16;
-    } else if (db >= 17) {
-        duty_cycle = 0x02;
-        hp_max = 0x03;
-        power = 0x16;
-    } else if (db >= 14 && dev == TX_POWER_SX1261) {
-        duty_cycle = 0x04;
-        hp_max = 0x00;
-        power = 0x0E;
-    } else if (db >= 14 && dev == TX_POWER_SX1262) {
-        duty_cycle = 0x02;
-        hp_max = 0x02;
-        power = 0x16;
-    } else if (db >= 14 && dev == TX_POWER_SX1268) {
-        duty_cycle = 0x04;
-        hp_max = 0x06;
-        power = 0x0F;
-    } else if (db >= 10 && dev == TX_POWER_SX1261) {
-        duty_cycle = 0x01;
-        hp_max = 0x00;
-        power = 0x0D;
-    } else if (db >= 10 && dev == TX_POWER_SX1268) {
-        duty_cycle = 0x00;
-        hp_max = 0x03;
-        power = 0x0F;
-    } else {
-        return;
-    }
-
-    uint8_t pa_config[] = { 0x95, duty_cycle, hp_max, dev_sel, 0x01 };
-    uint8_t tx_params[] = { 0x8E, power, PA_RAMP_800U };
+    uint8_t pa_config[] = { 0x95, 0x04, 0x07, 0x00, 0x01 };
 
     wait_on_busy();
     write_bytes(pa_config, sizeof(pa_config));
+
+    uint8_t ocp_param[] = { 0x18 };
+
+    wait_on_busy();
+    write_reg(REG_OCP_CONFIGURATION, ocp_param, sizeof(ocp_param));
+
+    uint8_t tx_params[] = { 0x8E, db, PA_RAMP_40U };
 
     wait_on_busy();
     write_bytes(tx_params, sizeof(tx_params));
