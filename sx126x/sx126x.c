@@ -664,6 +664,11 @@ bool sx126x_begin() {
     wait_on_busy();
     write_bytes(base_addr, sizeof(base_addr));
 
+    uint16_t mask = IRQ_TX_DONE | IRQ_RX_DONE | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_PREAMBLE_DETECTED;
+
+    wait_on_busy();
+    irq_setup(mask, mask, 0, 0);
+
     return true;
 }
 
@@ -791,11 +796,6 @@ void sx126x_write(const uint8_t *buf, uint8_t len) {
 }
 
 void sx126x_end_packet() {
-    uint16_t mask = IRQ_TX_DONE | IRQ_TIMEOUT;
-
-    wait_on_busy();
-    irq_setup(mask, mask, 0, 0);
-
     wait_on_busy();
     set_packet_params_loRa(save_preamble_len, save_header_type, payload_tx_rx, save_crc);
 
@@ -807,12 +807,9 @@ void sx126x_end_packet() {
 }
 
 void sx126x_request(uint32_t timeout) {
-    uint16_t mask = IRQ_RX_DONE | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_PREAMBLE_DETECTED;
-
     if (timeout == RX_CONTINUOUS) {
         state = SX126X_RX_CONTINUOUS;
     } else {
-        mask |= IRQ_TIMEOUT;
         state = SX126X_RX_SINGLE;
         timeout <<= 6;
 
@@ -820,12 +817,6 @@ void sx126x_request(uint32_t timeout) {
             timeout = RX_SINGLE;
         }
     }
-
-    wait_on_busy();
-    irq_setup(mask, mask, 0, 0);
-
-    wait_on_busy();
-    clear_irq_status(IRQ_ALL);
 
     switch_ant();
     wait_on_busy();

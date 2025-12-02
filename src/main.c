@@ -60,15 +60,8 @@ int main() {
         return 1;
     }
 
-    if (!sx126x_begin()) {
-        syslog(LOG_ERR, "Begin");
-        return 1;
-    }
-
     queue_init();
     tcp_init(7633);
-
-    sx126x_set_dio3_txco_ctrl(DIO3_OUTPUT_1_8, TXCO_DELAY_10);
 
     sx126x_set_rx_done_callback(rnode_rx_done);
     sx126x_set_tx_done_callback(rnode_tx_done);

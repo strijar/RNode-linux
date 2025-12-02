@@ -259,6 +259,9 @@ static void ans_cr(const uint8_t *param) {
 
 static void ans_radio_state(const uint8_t *param) {
     if (param[0] == 1) {
+        sx126x_begin();
+
+        sx126x_set_dio3_txco_ctrl(DIO3_OUTPUT_1_8, TXCO_DELAY_10);
         sx126x_set_freq(current_freq);
         sx126x_set_tx_power(current_tx_power);
 
