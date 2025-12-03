@@ -22,6 +22,7 @@
 
 #define SINGLE_MTU          255
 #define HEADER_L            1
+#define DATA_MTU            (SINGLE_MTU - HEADER_L)
 
 #define CMD_UNKNOWN         0xFE
 #define CMD_DATA            0x00
@@ -443,7 +444,7 @@ static void tx_buf(const uint8_t *buf, size_t len, uint8_t flag) {
 void rnode_to_air(const uint8_t *buf, size_t len) {
     seq_tx = random() & 0xF0;
 
-    if (len <= SINGLE_MTU - HEADER_L) {
+    if (len <= DATA_MTU) {
         /* Everything fit into one packet */
 
         tx_buf(buf, len, 0);
@@ -452,13 +453,13 @@ void rnode_to_air(const uint8_t *buf, size_t len) {
     } else {
         /* It didn't fit. Save tail... */
 
-        len_tx = len - SINGLE_MTU - HEADER_L;
-        memcpy(buf_tx, &buf[SINGLE_MTU - HEADER_L], len_tx);
+        len_tx = len - DATA_MTU;
+        memcpy(buf_tx, &buf[DATA_MTU], len_tx);
 
         /*  ...and sending the first part */
 
-        tx_buf(buf, SINGLE_MTU - HEADER_L, FLAG_SPLIT);
-        csma_add_airtime(SINGLE_MTU - HEADER_L);
+        tx_buf(buf, DATA_MTU, FLAG_SPLIT);
+        csma_add_airtime(DATA_MTU);
     }
 }
 
@@ -469,7 +470,10 @@ void rnode_tx_done() {
         tx_buf(buf_tx, len_tx, FLAG_SPLIT);
         len_tx = 0;
     } else {
-        sx126x_request(RX_CONTINUOUS);
+        for (uint8_t i = 0; i < 3; i++) {
+            sx126x_request(RX_CONTINUOUS);
+            usleep(1000);
+        }
     }
 }
 
