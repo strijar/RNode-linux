@@ -273,7 +273,13 @@ static void ans_radio_state(const uint8_t *param) {
         sx126x_request(RX_CONTINUOUS);
 
         syslog(LOG_INFO, "Radio on");
-        queue_set_busy_timeout(sx126x_packet_symbols(255) * sx126x_lora_symbol_time_ms());
+
+        uint32_t header_ms;
+        uint32_t data_ms;
+
+        sx126x_air_time(255, &header_ms, &data_ms);
+
+        queue_set_busy_timeout(header_ms * 3 / 2, data_ms * 3 / 2);
     }
 
     uint8_t ans[] = { CMD_RADIO_STATE, param[0] };

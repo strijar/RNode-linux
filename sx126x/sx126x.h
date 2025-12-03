@@ -68,6 +68,7 @@ typedef enum {
 typedef enum {
     CAUSE_INIT = 0,
     CAUSE_PREAMBLE_DETECTED,
+    CAUSE_HEADER_VALID,
     CAUSE_HEADER_ERR,
     CAUSE_RX_DONE,
     CAUSE_TX_DONE
@@ -114,8 +115,7 @@ void sx126x_read(uint8_t *buf, uint16_t len);
 void sx126x_packet_signal(float *rssi, float *snr, float *signal_rssi);
 void sx126x_packet_signal_raw(uint8_t *rssi, int8_t *snr, uint8_t *signal_rssi);
 
-float sx126x_packet_symbols(uint16_t len);
-float sx126x_lora_symbol_time_ms();
+void sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms);
 
 int8_t sx126x_current_rssi();
 state_t sx126x_get_state();

@@ -30,7 +30,8 @@ static pthread_mutex_t  mux;
 
 static bool             tx_enable = false;
 static uint64_t         tx_delay;
-static uint32_t         tx_timeout;
+static uint32_t         tx_header_timeout;
+static uint32_t         tx_data_timeout;
 static uint64_t         tx_disabled;
 static uint64_t         rssi_delay;
 
@@ -107,9 +108,11 @@ void queue_init() {
     pthread_detach(thread);
 }
 
-void queue_set_busy_timeout(uint32_t ms) {
-    tx_timeout = ms * 3 / 2;
-    syslog(LOG_INFO, "Maximum medium busy %i ms", tx_timeout);
+void queue_set_busy_timeout(uint32_t header_ms, uint32_t data_ms) {
+    tx_header_timeout = header_ms;
+    tx_data_timeout = data_ms;
+
+    syslog(LOG_INFO, "Maximum medium busy %i ms + %i ms", tx_header_timeout, tx_data_timeout);
 }
 
 void queue_push(const uint8_t *buf, size_t len) {
@@ -151,7 +154,12 @@ void queue_medium_state(cause_medium_t cause) {
 
         case CAUSE_PREAMBLE_DETECTED:
             tx_enable = false;
-            tx_disabled = now + tx_timeout;
+            tx_disabled = now + tx_header_timeout;
+            break;
+
+        case CAUSE_HEADER_VALID:
+            tx_enable = false;
+            tx_disabled = now + tx_data_timeout;
             break;
     }
 }

@@ -458,6 +458,15 @@ static void * irq_worker(void *p) {
                     }
                 }
 
+                if (status & IRQ_HEADER_VALID) {
+                    clear_irq_status(IRQ_HEADER_VALID);
+                    syslog(LOG_INFO, "IRQ: HEADER VALID");
+
+                    if (medium_callback) {
+                        medium_callback(CAUSE_HEADER_VALID);
+                    }
+                }
+
                 if (status & IRQ_HEADER_ERR) {
                     clear_irq_status(IRQ_HEADER_ERR);
                     syslog(LOG_INFO, "IRQ: HEADER ERR");
@@ -664,7 +673,7 @@ bool sx126x_begin() {
     wait_on_busy();
     write_bytes(base_addr, sizeof(base_addr));
 
-    uint16_t mask = IRQ_TX_DONE | IRQ_RX_DONE | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_PREAMBLE_DETECTED;
+    uint16_t mask = IRQ_HEADER_VALID | IRQ_TX_DONE | IRQ_RX_DONE | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_PREAMBLE_DETECTED;
 
     wait_on_busy();
     irq_setup(mask, mask, 0, 0);
@@ -864,31 +873,19 @@ int8_t sx126x_current_rssi() {
     return -get_current_rssi(&rssi) / 2;
 }
 
-float sx126x_packet_symbols(uint16_t len) {
-    float   symbols = 0;
-    int     ldr_opt = 0;
+void sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms) {
+    float t_sym = (powf(2, save_sf) / save_bw ) * 1000.0f;
+    float bits = 8.0f * len;
 
-    if (save_ldro) {
-        ldr_opt = 1;
-    }
+    bits -= 4.0f * save_sf;
+    bits += 8.0f;
+    bits += 16.0f;  /* CRC */
+    bits += 20.0f;  /* Header */
 
-    if (save_sf < 7) {
-        symbols += (8 * len + PHY_CRC_LORA_BITS - 4 * save_sf + PHY_HEADER_LORA_SYMBOLS);
-        symbols /= 4 * save_sf;
-        symbols *= save_cr;
-        symbols += preamble_symbols + 2.25f + 8;
-    } else {
-        symbols += (8 * len + PHY_CRC_LORA_BITS - 4 * save_sf + 8 + PHY_HEADER_LORA_SYMBOLS);
-        symbols /= 4 * (save_sf - 2 * ldr_opt);
-        symbols *= save_cr;
-        symbols += preamble_symbols + 0.25f + 8;
-    }
+    uint16_t payload = ceil(bits / 4.0f / save_sf) * save_cr + 8;
 
-    return symbols;
-}
-
-float sx126x_lora_symbol_time_ms() {
-    return symbol_time_ms;
+    *preamble_ms = (save_preamble_len + 4.25f) * t_sym;
+    *data_ms = payload * t_sym;
 }
 
 state_t sx126x_get_state() {

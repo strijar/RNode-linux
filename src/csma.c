@@ -121,15 +121,17 @@ void csma_update_airtime() {
 }
 
 void csma_add_airtime(uint16_t written) {
-    float       packet_cost_ms = sx126x_packet_symbols(written) * sx126x_lora_symbol_time_ms();
+    uint32_t    preamble_ms, data_ms;
     uint16_t    cb = current_airtime_bin();
     uint16_t    nb = cb + 1;
+
+    sx126x_air_time(written, &preamble_ms, &data_ms);
 
     if (nb == AIRTIME_BINS) {
         nb = 0;
     }
 
-    airtime_bins[cb] += packet_cost_ms;
+    airtime_bins[cb] += preamble_ms + data_ms;
     airtime_bins[nb] = 0;
 }
 
