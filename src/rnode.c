@@ -260,26 +260,8 @@ static void ans_cr(const uint8_t *param) {
 
 static void ans_radio_state(const uint8_t *param) {
     if (param[0] == 1) {
-        sx126x_begin();
-
-        sx126x_set_dio3_txco_ctrl(DIO3_OUTPUT_1_8, TXCO_DELAY_10);
-        sx126x_set_freq(current_freq);
-        sx126x_set_tx_power(current_tx_power);
-
-        sx126x_set_lora_modulation(current_sf, current_bw, current_cr, LDRO_OFF);
-        sx126x_set_lora_packet(HEADER_EXPLICIT, 18, 15, CRC_ON);
-        sx126x_set_sync_word(0x1424);
-
-        sx126x_request(RX_CONTINUOUS);
-
+        rnode_start();
         syslog(LOG_INFO, "Radio on");
-
-        uint32_t header_ms;
-        uint32_t data_ms;
-
-        sx126x_air_time(255, &header_ms, &data_ms);
-
-        queue_set_busy_timeout(header_ms * 3 / 2, data_ms * 3 / 2);
     }
 
     uint8_t ans[] = { CMD_RADIO_STATE, param[0] };
@@ -288,6 +270,27 @@ static void ans_radio_state(const uint8_t *param) {
 }
 
 /* * */
+
+void rnode_start() {
+    sx126x_begin();
+
+    sx126x_set_dio3_txco_ctrl(DIO3_OUTPUT_1_8, TXCO_DELAY_10);
+    sx126x_set_freq(current_freq);
+    sx126x_set_tx_power(current_tx_power);
+
+    sx126x_set_lora_modulation(current_sf, current_bw, current_cr, LDRO_OFF);
+    sx126x_set_lora_packet(HEADER_EXPLICIT, 18, 15, CRC_ON);
+    sx126x_set_sync_word(0x1424);
+
+    sx126x_request(RX_CONTINUOUS);
+
+    uint32_t header_ms;
+    uint32_t data_ms;
+
+    sx126x_air_time(255, &header_ms, &data_ms);
+
+    queue_set_busy_timeout(header_ms * 3 / 2, data_ms * 3 / 2);
+}
 
 void rnode_from_channel(const uint8_t *buf, size_t len) {
     uint8_t cmd = buf[0];
@@ -447,7 +450,9 @@ static void tx_buf(const uint8_t *buf, size_t len, uint8_t flag) {
     syslog(LOG_INFO, "TX buf done");
 }
 
-void rnode_to_air(const uint8_t *buf, size_t len) {
+uint32_t rnode_to_air(const uint8_t *buf, size_t len) {
+    uint32_t air_time;
+
     seq_tx = random() & 0xF0;
 
     if (len <= DATA_MTU) {
@@ -455,18 +460,24 @@ void rnode_to_air(const uint8_t *buf, size_t len) {
 
         tx_buf(buf, len, 0);
         len_tx = 0;
-        csma_add_airtime(len);
+
+        air_time = sx126x_air_time(len, NULL, NULL);
     } else {
         /* It didn't fit. Save tail... */
 
         len_tx = len - DATA_MTU;
         memcpy(buf_tx, &buf[DATA_MTU], len_tx);
+        air_time = sx126x_air_time(len_tx, NULL, NULL);
 
         /*  ...and sending the first part */
 
         tx_buf(buf, DATA_MTU, FLAG_SPLIT);
-        csma_add_airtime(DATA_MTU);
+        air_time += sx126x_air_time(DATA_MTU, NULL, NULL);
     }
+
+    csma_add_airtime(air_time);
+
+    return air_time;
 }
 
 void rnode_tx_done() {
@@ -476,10 +487,7 @@ void rnode_tx_done() {
         tx_buf(buf_tx, len_tx, FLAG_SPLIT);
         len_tx = 0;
     } else {
-        for (uint8_t i = 0; i < 3; i++) {
-            sx126x_request(RX_CONTINUOUS);
-            usleep(1000);
-        }
+        sx126x_request(RX_CONTINUOUS);
     }
 }
 

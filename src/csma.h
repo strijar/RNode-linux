@@ -28,5 +28,5 @@ typedef struct {
 
 void csma_update_airtime();
 void csma_update_current_rssi();
-void csma_add_airtime(uint16_t written);
+void csma_add_airtime(uint32_t ms);
 uint32_t csma_get_cw();

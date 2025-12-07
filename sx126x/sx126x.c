@@ -47,19 +47,6 @@ typedef enum {
 } standby_t;
 
 typedef enum {
-    STATUS_DATA_AVAILABLE   = 0x04,
-    STATUS_CMD_TIMEOUT      = 0x06,
-    STATUS_CMD_ERROR        = 0x08,
-    STATUS_CMD_FAILED       = 0x0A,
-    STATUS_CMD_TX_DONE      = 0x0C,
-    STATUS_MODE_STDBY_RC    = 0x20,
-    STATUS_MODE_STDBY_XOSC  = 0x30,
-    STATUS_MODE_FS          = 0x40,
-    STATUS_MODE_RX          = 0x50,
-    STATUS_MODE_TX          = 0x60
-} status_mode_t;
-
-typedef enum {
     FSK_MODEM               = 0x00,
     LORA_MODEM              = 0x01
 } modem_t;
@@ -292,14 +279,6 @@ static bool set_standby(standby_t x) {
     return write_bytes(msg, sizeof(msg));
 }
 
-static status_mode_t get_mode() {
-    uint8_t msg[] = { 0xC0, 0x00 };
-    uint8_t res[] = { 0x00, 0x00 };
-
-    read_bytes(msg, res, sizeof(msg));
-
-    return res[1] & 0x70;
-}
 
 static bool set_packet_type(modem_t x) {
     uint8_t msg[] = { 0x8A, x };
@@ -415,6 +394,13 @@ static bool set_rx(uint32_t timeout) {
     uint8_t msg[] = { 0x82, (timeout >> 16) & 0xFF, (timeout >> 8) & 0xFF, timeout & 0xFF };
 
     return write_bytes(msg, sizeof(msg));
+}
+
+static void set_irq_mask() {
+    uint16_t mask = IRQ_HEADER_VALID | IRQ_TX_DONE | IRQ_RX_DONE | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_PREAMBLE_DETECTED;
+
+    wait_on_busy();
+    irq_setup(mask, mask, 0, 0);
 }
 
 /* * */
@@ -660,7 +646,7 @@ bool sx126x_begin() {
         return false;
     }
 
-    if (get_mode() != STATUS_MODE_STDBY_RC) {
+    if ((sx126x_get_status_mode() & 0x70) != STATUS_MODE_STDBY_RC) {
         return false;
     }
 
@@ -673,10 +659,7 @@ bool sx126x_begin() {
     wait_on_busy();
     write_bytes(base_addr, sizeof(base_addr));
 
-    uint16_t mask = IRQ_HEADER_VALID | IRQ_TX_DONE | IRQ_RX_DONE | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_PREAMBLE_DETECTED;
-
-    wait_on_busy();
-    irq_setup(mask, mask, 0, 0);
+    set_irq_mask();
 
     return true;
 }
@@ -805,10 +788,12 @@ void sx126x_write(const uint8_t *buf, uint8_t len) {
 }
 
 void sx126x_end_packet() {
+    state = SX126X_TX;
+
     wait_on_busy();
     set_packet_params_loRa(save_preamble_len, save_header_type, payload_tx_rx, save_crc);
 
-    state = SX126X_TX;
+    set_irq_mask();
     switch_ant();
 
     wait_on_busy();
@@ -827,7 +812,12 @@ void sx126x_request(uint32_t timeout) {
         }
     }
 
+    wait_on_busy();
+    set_packet_params_loRa(save_preamble_len, save_header_type, payload_tx_rx, save_crc);
+
+    set_irq_mask();
     switch_ant();
+
     wait_on_busy();
     set_rx(timeout);
 }
@@ -873,7 +863,7 @@ int8_t sx126x_current_rssi() {
     return -get_current_rssi(&rssi) / 2;
 }
 
-void sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms) {
+uint32_t sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms) {
     float t_sym = (powf(2, save_sf) / save_bw ) * 1000.0f;
     float bits = 8.0f * len;
 
@@ -882,12 +872,30 @@ void sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms) {
     bits += 16.0f;  /* CRC */
     bits += 20.0f;  /* Header */
 
-    uint16_t payload = ceil(bits / 4.0f / save_sf) * save_cr + 8;
+    uint16_t    payload = ceil(bits / 4.0f / save_sf) * save_cr + 8;
+    uint32_t    preamble = (save_preamble_len + 4.25f) * t_sym;
+    uint32_t    data = payload * t_sym;
 
-    *preamble_ms = (save_preamble_len + 4.25f) * t_sym;
-    *data_ms = payload * t_sym;
+    if (preamble_ms) {
+        *preamble_ms = preamble;
+    }
+
+    if (data_ms) {
+        *data_ms = data;
+    }
+
+    return preamble + data;
 }
 
 state_t sx126x_get_state() {
     return state;
+}
+
+status_mode_t sx126x_get_status_mode() {
+    uint8_t msg[] = { 0xC0, 0x00 };
+    uint8_t res[] = { 0x00, 0x00 };
+
+    read_bytes(msg, res, sizeof(msg));
+
+    return res[1];
 }

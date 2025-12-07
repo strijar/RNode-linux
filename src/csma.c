@@ -120,18 +120,15 @@ void csma_update_airtime() {
     rnode_send_stat_channel(&channel);
 }
 
-void csma_add_airtime(uint16_t written) {
-    uint32_t    preamble_ms, data_ms;
+void csma_add_airtime(uint32_t ms) {
     uint16_t    cb = current_airtime_bin();
     uint16_t    nb = cb + 1;
-
-    sx126x_air_time(written, &preamble_ms, &data_ms);
 
     if (nb == AIRTIME_BINS) {
         nb = 0;
     }
 
-    airtime_bins[cb] += preamble_ms + data_ms;
+    airtime_bins[cb] += ms;
     airtime_bins[nb] = 0;
 }
 

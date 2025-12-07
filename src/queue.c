@@ -33,6 +33,7 @@ static uint64_t         tx_delay;
 static uint32_t         tx_header_timeout;
 static uint32_t         tx_data_timeout;
 static uint64_t         tx_disabled;
+static uint64_t         tx_wait_timeout;
 static uint64_t         rssi_delay;
 
 static bool send_packet() {
@@ -46,7 +47,7 @@ static bool send_packet() {
         pthread_mutex_unlock(&mux);
 
         syslog(LOG_INFO, "Queue: pop to air (%i)", item->len);
-        rnode_to_air(item->data, item->len);
+        tx_wait_timeout = get_time() + rnode_to_air(item->data, item->len) * 2;
 
         pthread_mutex_lock(&mux);
 
@@ -93,6 +94,9 @@ static void * queue_worker(void *p) {
                     tx_enable = true;
                 }
             }
+        } else if (now > tx_wait_timeout) {
+            syslog(LOG_WARNING, "TX wait timeout! Radio restart");
+            rnode_start();
         }
         usleep(1000);
     }

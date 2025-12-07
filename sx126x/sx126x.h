@@ -75,6 +75,19 @@ typedef enum {
 } cause_medium_t;
 
 typedef enum {
+    STATUS_DATA_AVAILABLE   = 0x04,
+    STATUS_CMD_TIMEOUT      = 0x06,
+    STATUS_CMD_ERROR        = 0x08,
+    STATUS_CMD_FAILED       = 0x0A,
+    STATUS_CMD_TX_DONE      = 0x0C,
+    STATUS_MODE_STDBY_RC    = 0x20,
+    STATUS_MODE_STDBY_XOSC  = 0x30,
+    STATUS_MODE_FS          = 0x40,
+    STATUS_MODE_RX          = 0x50,
+    STATUS_MODE_TX          = 0x60
+} status_mode_t;
+
+typedef enum {
     SX126X_IDLE = 0,
     SX126X_RX_SINGLE,
     SX126X_RX_CONTINUOUS,
@@ -115,7 +128,8 @@ void sx126x_read(uint8_t *buf, uint16_t len);
 void sx126x_packet_signal(float *rssi, float *snr, float *signal_rssi);
 void sx126x_packet_signal_raw(uint8_t *rssi, int8_t *snr, uint8_t *signal_rssi);
 
-void sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms);
+uint32_t sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms);
 
 int8_t sx126x_current_rssi();
 state_t sx126x_get_state();
+status_mode_t sx126x_get_status_mode();
