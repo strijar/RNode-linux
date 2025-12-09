@@ -10,7 +10,7 @@ project(rnode)
 
 add_executable(${PROJECT_NAME})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE gpiod m)
+target_link_libraries(${PROJECT_NAME} PRIVATE gpiod m cyaml)
 
 add_subdirectory(src)
 add_subdirectory(sx126x)

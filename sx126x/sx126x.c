@@ -509,6 +509,8 @@ bool sx126x_init_spi(const char *spidev, uint8_t cs_port, uint8_t cs_pin) {
         return false;
     }
 
+    syslog(LOG_INFO, "SPI %s, CS GPIO %i:%i", spidev, (int) cs_port, (int) cs_pin);
+
     struct gpiod_chip *chip = gpiod_chip_open_by_number(cs_port);
 
     if (!chip) {
@@ -529,6 +531,8 @@ bool sx126x_init_spi(const char *spidev, uint8_t cs_port, uint8_t cs_pin) {
 bool sx126x_init_rst(uint8_t port, uint8_t pin) {
     struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
 
+    syslog(LOG_INFO, "RST GPIO %i:%i", (int) port, (int) pin);
+
     if (!chip) {
         return false;
     }
@@ -547,6 +551,8 @@ bool sx126x_init_rst(uint8_t port, uint8_t pin) {
 bool sx126x_init_busy(uint8_t port, uint8_t pin) {
     struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
 
+    syslog(LOG_INFO, "Busy GPIO %i:%i", (int) port, (int) pin);
+
     if (!chip) {
         return false;
     }
@@ -564,6 +570,8 @@ bool sx126x_init_busy(uint8_t port, uint8_t pin) {
 
 bool sx126x_init_dio1(uint8_t port, uint8_t pin) {
     struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
+
+    syslog(LOG_INFO, "DIO1 GPIO %i:%i", (int) port, (int) pin);
 
     if (!chip) {
         return false;
@@ -588,6 +596,8 @@ bool sx126x_init_dio1(uint8_t port, uint8_t pin) {
 bool sx126x_init_tx_en(uint8_t port, uint8_t pin) {
     struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
 
+    syslog(LOG_INFO, "TX EN GPIO %i:%i", (int) port, (int) pin);
+
     if (!chip) {
         return false;
     }
@@ -605,6 +615,8 @@ bool sx126x_init_tx_en(uint8_t port, uint8_t pin) {
 
 bool sx126x_init_rx_en(uint8_t port, uint8_t pin) {
     struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
+
+    syslog(LOG_INFO, "RX EN GPIO %i:%i", (int) port, (int) pin);
 
     if (!chip) {
         return false;
