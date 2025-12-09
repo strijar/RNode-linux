@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (!sx126x_init_dio1(config->tx_en.port, config->tx_en.pin)) {
+    if (!sx126x_init_dio1(config->dio1.port, config->dio1.pin)) {
         syslog(LOG_ERR, "DIO1 pin");
         return 1;
     }
