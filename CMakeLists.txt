@@ -8,6 +8,9 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O3")
 
 project(rnode)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GPIOD REQUIRED libgpiod>=2.0)
+
 add_executable(${PROJECT_NAME})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE gpiod m cyaml)

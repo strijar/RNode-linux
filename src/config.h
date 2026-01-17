@@ -13,8 +13,8 @@
 #include <stdbool.h>
 
 typedef struct {
-    uint8_t     port;
-    uint8_t     pin;
+    const char  *chip;
+    uint8_t      pin;
 } config_gpio_t;
 
 typedef struct {
