@@ -353,7 +353,7 @@ void rnode_from_channel(const uint8_t *buf, size_t len) {
 }
 
 void rnode_signal_stat(uint8_t rssi, int8_t snr, uint8_t signal_rssi) {
-    uint8_t ans_rssi[] = { CMD_STAT_RSSI, rssi };
+    uint8_t ans_rssi[] = { CMD_STAT_RSSI, 157 - rssi};
     uint8_t ans_snr[] = { CMD_STAT_SNR, snr };
 
     kiss_encode(ans_rssi, sizeof(ans_rssi));
