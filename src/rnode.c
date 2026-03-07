@@ -279,7 +279,7 @@ void rnode_start() {
     sx126x_set_tx_power(current_tx_power);
 
     sx126x_set_lora_modulation(current_sf, current_bw, current_cr, LDRO_OFF);
-    sx126x_set_lora_packet(HEADER_EXPLICIT, 18, 15, CRC_ON);
+    sx126x_set_lora_packet(HEADER_EXPLICIT, 25, 15, CRC_ON);
     sx126x_set_sync_word(0x1424);
 
     sx126x_request(RX_CONTINUOUS);
