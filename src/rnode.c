@@ -290,6 +290,7 @@ void rnode_start() {
     sx126x_air_time(255, &header_ms, &data_ms);
 
     queue_set_busy_timeout(header_ms * 3 / 2, data_ms * 3 / 2);
+    syslog(LOG_INFO, "Radio ready");
 }
 
 void rnode_from_channel(const uint8_t *buf, size_t len) {
@@ -446,7 +447,6 @@ static void tx_buf(const uint8_t *buf, size_t len, uint8_t flag) {
     sx126x_begin_packet();
     sx126x_write(buf_air, len + HEADER_L);
     sx126x_end_packet();
-
     syslog(LOG_INFO, "TX buf done");
 }
 

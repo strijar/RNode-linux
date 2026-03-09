@@ -115,8 +115,6 @@ void queue_init() {
 void queue_set_busy_timeout(uint32_t header_ms, uint32_t data_ms) {
     tx_header_timeout = header_ms;
     tx_data_timeout = data_ms;
-
-    syslog(LOG_INFO, "Maximum medium busy %i ms + %i ms", tx_header_timeout, tx_data_timeout);
 }
 
 void queue_push(const uint8_t *buf, size_t len) {

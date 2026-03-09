@@ -20,6 +20,7 @@
 #include <pthread.h>
 
 #include "sx126x.h"
+#include "util.h"
 
 #define PHY_HEADER_LORA_SYMBOLS     20
 #define PHY_CRC_LORA_BITS           16
@@ -121,6 +122,7 @@ static state_t              state = SX126X_IDLE;
 static sx126x_rx_done_callback_t    rx_done_callback = NULL;
 static sx126x_tx_done_callback_t    tx_done_callback = NULL;
 static sx126x_medium_callback_t     medium_callback = NULL;
+static sx126x_timeout_callback_t    timeout_callback = NULL;
 
 static void wait_on_busy() {
     while (gpiod_line_get_value(busy_line) == 1) {
@@ -422,9 +424,20 @@ static void * irq_worker(void *p) {
     }
 
     while (true) {
-        int res = gpiod_line_event_wait(dio1_line, NULL);
+        struct timespec timeout;
 
-        if (res == 1) {
+        timeout.tv_sec = 60;
+        timeout.tv_nsec = 0;
+
+        int res = gpiod_line_event_wait(dio1_line, &timeout);
+
+        if (res == 0) {
+            syslog(LOG_INFO, "IRQ: Timeout");
+
+            if (timeout_callback) {
+                timeout_callback();
+            }
+        } else if (res == 1) {
             if (gpiod_line_event_read(dio1_line, &event) != 0) {
                 continue;
             }
@@ -433,14 +446,12 @@ static void * irq_worker(void *p) {
                 uint16_t    status = get_irq_status();
 
                 if (status & IRQ_CRC_ERR) {
-                    clear_irq_status(IRQ_CRC_ERR);
                     syslog(LOG_INFO, "IRQ: CRC ERR");
 
                     crc_ok = false;
                 }
 
                 if (status & IRQ_PREAMBLE_DETECTED) {
-                    clear_irq_status(IRQ_PREAMBLE_DETECTED);
                     syslog(LOG_INFO, "IRQ: PREAMBLE DETECTED");
                     crc_ok = true;
 
@@ -450,7 +461,6 @@ static void * irq_worker(void *p) {
                 }
 
                 if (status & IRQ_HEADER_VALID) {
-                    clear_irq_status(IRQ_HEADER_VALID);
                     syslog(LOG_INFO, "IRQ: HEADER VALID");
 
                     if (medium_callback) {
@@ -459,7 +469,6 @@ static void * irq_worker(void *p) {
                 }
 
                 if (status & IRQ_HEADER_ERR) {
-                    clear_irq_status(IRQ_HEADER_ERR);
                     syslog(LOG_INFO, "IRQ: HEADER ERR");
 
                     if (medium_callback) {
@@ -468,10 +477,6 @@ static void * irq_worker(void *p) {
                 }
 
                 if (status & IRQ_RX_DONE) {
-                    if (state == SX126X_RX_CONTINUOUS) {
-                        clear_irq_status(IRQ_RX_DONE);
-                    }
-
                     syslog(LOG_INFO, "IRQ: RX DONE");
 
                     if (medium_callback) {
@@ -489,7 +494,6 @@ static void * irq_worker(void *p) {
                 }
 
                 if (status & IRQ_TX_DONE) {
-                    clear_irq_status(IRQ_TX_DONE);
                     syslog(LOG_INFO, "IRQ: TX DONE");
 
                     if (medium_callback) {
@@ -500,6 +504,9 @@ static void * irq_worker(void *p) {
                         tx_done_callback();
                     }
                 }
+
+                clear_irq_status(0x7F);
+                set_irq_mask();
             }
         }
     }
@@ -650,6 +657,10 @@ void sx126x_set_medium_callback(sx126x_medium_callback_t callback) {
     medium_callback = callback;
 }
 
+void sx126x_set_timeout_callback(sx126x_timeout_callback_t callback) {
+    timeout_callback = callback;
+}
+
 bool sx126x_begin() {
     gpiod_line_set_value(rst_line, 0);
     usleep(10000);
@@ -677,7 +688,6 @@ bool sx126x_begin() {
     write_bytes(base_addr, sizeof(base_addr));
 
     set_irq_mask();
-
     return true;
 }
 

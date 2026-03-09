@@ -64,6 +64,7 @@ int main(int argc, char *argv[]) {
     sx126x_set_rx_done_callback(rnode_rx_done);
     sx126x_set_tx_done_callback(rnode_tx_done);
     sx126x_set_medium_callback(queue_medium_state);
+    sx126x_set_timeout_callback(rnode_start);
 
     queue_medium_state(CAUSE_INIT);
 
