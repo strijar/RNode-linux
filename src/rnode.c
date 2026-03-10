@@ -118,6 +118,8 @@
 #define ERROR_MEMORY_LOW    0x05
 #define ERROR_MODEM_TIMEOUT 0x06
 
+#define CALIBRATE_PERIOD    60
+
 static uint8_t  seq = SEQ_UNSET;
 static uint8_t  buf_in[MTU];
 static size_t   len_in = 0;
@@ -131,6 +133,8 @@ static bw_t     current_bw;
 static cr_t     current_cr;
 static uint8_t  current_tx_power;
 static uint8_t  current_sf;
+
+static uint64_t calibrate_time;
 
 /* * */
 
@@ -290,6 +294,7 @@ void rnode_start() {
     sx126x_air_time(255, &header_ms, &data_ms);
 
     queue_set_busy_timeout(header_ms * 3 / 2, data_ms * 3 / 2);
+    calibrate_time = get_time() / 1000 + CALIBRATE_PERIOD;
     syslog(LOG_INFO, "Radio ready");
 }
 
@@ -487,7 +492,13 @@ void rnode_tx_done() {
         tx_buf(buf_tx, len_tx, FLAG_SPLIT);
         len_tx = 0;
     } else {
-        sx126x_recalibrate();
+        uint64_t now = get_time() / 1000;
+
+        if (now > calibrate_time) {
+            syslog(LOG_INFO, "Calibrate");
+            calibrate_time = now + CALIBRATE_PERIOD;
+            sx126x_recalibrate();
+        }
         sx126x_request(RX_CONTINUOUS);
     }
 }
