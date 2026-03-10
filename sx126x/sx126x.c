@@ -17,16 +17,11 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
-#include <gpiod.h>
+#include "gpio_hal.h"
 #include <pthread.h>
 
 #include "sx126x.h"
 #include "util.h"
-
-typedef struct {
-    struct gpiod_line_request   *req;
-    unsigned int                 pin;
-} gpio_line_t;
 
 #define PHY_HEADER_LORA_SYMBOLS     20
 #define PHY_CRC_LORA_BITS           16
@@ -97,12 +92,12 @@ typedef enum {
     IRQ_NONE                = 0x0000
 } irq_t;
 
-static gpio_line_t  cs      = { NULL, 0 };
-static gpio_line_t  rst     = { NULL, 0 };
-static gpio_line_t  busy    = { NULL, 0 };
-static gpio_line_t  dio1    = { NULL, 0 };
-static gpio_line_t  tx_en   = { NULL, 0 };
-static gpio_line_t  rx_en   = { NULL, 0 };
+static gpio_line_t  *cs     = NULL;
+static gpio_line_t  *rst    = NULL;
+static gpio_line_t  *busy   = NULL;
+static gpio_line_t  *dio1   = NULL;
+static gpio_line_t  *tx_en  = NULL;
+static gpio_line_t  *rx_en  = NULL;
 static int                  spi_fd;
 
 static uint8_t              fifo_tx_addr_ptr = 0;
@@ -136,7 +131,7 @@ static sx126x_timeout_callback_t    timeout_callback = NULL;
 static void wait_on_busy() {
     uint16_t count = 0;
 
-    while (gpiod_line_request_get_value(busy.req, busy.pin) == GPIOD_LINE_VALUE_ACTIVE) {
+    while (gpio_get(busy) == GPIO_VALUE_ACTIVE) {
         usleep(1000);
 
         count++;
@@ -155,37 +150,21 @@ static void wait_on_busy() {
 static void switch_ant() {
     switch (state) {
         case SX126X_IDLE:
-            if (rx_en.req) {
-                gpiod_line_request_set_value(rx_en.req, rx_en.pin, GPIOD_LINE_VALUE_INACTIVE);
-            }
-            if (tx_en.req) {
-                gpiod_line_request_set_value(tx_en.req, tx_en.pin, GPIOD_LINE_VALUE_INACTIVE);
-            }
+            if (rx_en) gpio_set(rx_en, GPIO_VALUE_INACTIVE);
+            if (tx_en) gpio_set(tx_en, GPIO_VALUE_INACTIVE);
             break;
 
         case SX126X_RX_SINGLE:
         case SX126X_RX_CONTINUOUS:
-            if (tx_en.req) {
-                gpiod_line_request_set_value(tx_en.req, tx_en.pin, GPIOD_LINE_VALUE_INACTIVE);
-            }
-
+            if (tx_en) gpio_set(tx_en, GPIO_VALUE_INACTIVE);
             usleep(100);
-
-            if (rx_en.req) {
-                gpiod_line_request_set_value(rx_en.req, rx_en.pin, GPIOD_LINE_VALUE_ACTIVE);
-            }
+            if (rx_en) gpio_set(rx_en, GPIO_VALUE_ACTIVE);
             break;
 
         case SX126X_TX:
-            if (rx_en.req) {
-                gpiod_line_request_set_value(rx_en.req, rx_en.pin, GPIOD_LINE_VALUE_INACTIVE);
-            }
-
+            if (rx_en) gpio_set(rx_en, GPIO_VALUE_INACTIVE);
             usleep(100);
-
-            if (tx_en.req) {
-                gpiod_line_request_set_value(tx_en.req, tx_en.pin, GPIOD_LINE_VALUE_ACTIVE);
-            }
+            if (tx_en) gpio_set(tx_en, GPIO_VALUE_ACTIVE);
             break;
     }
 }
@@ -202,9 +181,9 @@ static bool write_bytes(const uint8_t *buf, size_t len) {
         .cs_change = 0,
     };
 
-    gpiod_line_request_set_value(cs.req, cs.pin, GPIOD_LINE_VALUE_INACTIVE);
+    gpio_set(cs, GPIO_VALUE_INACTIVE);
     int l = ioctl(spi_fd, SPI_IOC_MESSAGE(1), &k);
-    gpiod_line_request_set_value(cs.req, cs.pin, GPIOD_LINE_VALUE_ACTIVE);
+    gpio_set(cs, GPIO_VALUE_ACTIVE);
 
     return (l == k.len);
 }
@@ -228,9 +207,9 @@ static bool write_read_bytes(const uint8_t *buf, size_t buf_len, uint8_t *res, s
         }
     };
 
-    gpiod_line_request_set_value(cs.req, cs.pin, GPIOD_LINE_VALUE_INACTIVE);
+    gpio_set(cs, GPIO_VALUE_INACTIVE);
     int l = ioctl(spi_fd, SPI_IOC_MESSAGE(2), &k);
-    gpiod_line_request_set_value(cs.req, cs.pin, GPIOD_LINE_VALUE_ACTIVE);
+    gpio_set(cs, GPIO_VALUE_ACTIVE);
 
     return (l == (buf_len + res_len));
 }
@@ -246,9 +225,9 @@ static bool read_bytes(const uint8_t *buf, uint8_t *res, size_t len) {
         .cs_change = 0,
     };
 
-    gpiod_line_request_set_value(cs.req, cs.pin, GPIOD_LINE_VALUE_INACTIVE);
+    gpio_set(cs, GPIO_VALUE_INACTIVE);
     int l = ioctl(spi_fd, SPI_IOC_MESSAGE(1), &k);
-    gpiod_line_request_set_value(cs.req, cs.pin, GPIOD_LINE_VALUE_ACTIVE);
+    gpio_set(cs, GPIO_VALUE_ACTIVE);
 
     return (l == k.len);
 }
@@ -435,8 +414,7 @@ static void set_irq_mask() {
 /* * */
 
 static void * irq_worker(void *p) {
-    struct gpiod_edge_event_buffer  *buf = gpiod_edge_event_buffer_new(1);
-    bool                             crc_ok = true;
+    bool crc_ok = true;
 
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
@@ -446,7 +424,7 @@ static void * irq_worker(void *p) {
     }
 
     while (true) {
-        int res = gpiod_line_request_wait_edge_events(dio1.req, 60000000000);
+        int res = gpio_read_edge_rising(dio1);
 
         if (res < 0) {
             syslog(LOG_ERR, "IRQ: edge event wait error: %s", strerror(errno));
@@ -459,70 +437,64 @@ static void * irq_worker(void *p) {
             if (timeout_callback) {
                 timeout_callback();
             }
-        } else if (gpiod_line_request_read_edge_events(dio1.req, buf, 1) == 1) {
-            struct gpiod_edge_event *ev = gpiod_edge_event_buffer_get_event(buf, 0);
+        } else {
+            uint16_t status = get_irq_status();
 
-            if (gpiod_edge_event_get_event_type(ev) == GPIOD_EDGE_EVENT_RISING_EDGE) {
-                uint16_t    status = get_irq_status();
+            if (status & IRQ_CRC_ERR) {
+                syslog(LOG_INFO, "IRQ: CRC ERR");
+                crc_ok = false;
+            }
 
-                if (status & IRQ_CRC_ERR) {
-                    syslog(LOG_INFO, "IRQ: CRC ERR");
+            if (status & IRQ_PREAMBLE_DETECTED) {
+                syslog(LOG_INFO, "IRQ: PREAMBLE DETECTED");
+                crc_ok = true;
 
-                    crc_ok = false;
+                if (medium_callback) {
+                    medium_callback(CAUSE_PREAMBLE_DETECTED);
+                }
+            }
+
+            if (status & IRQ_HEADER_VALID) {
+                syslog(LOG_INFO, "IRQ: HEADER VALID");
+
+                if (medium_callback) {
+                    medium_callback(CAUSE_HEADER_VALID);
+                }
+            }
+
+            if (status & IRQ_HEADER_ERR) {
+                syslog(LOG_INFO, "IRQ: HEADER ERR");
+
+                if (medium_callback) {
+                    medium_callback(CAUSE_HEADER_ERR);
+                }
+            }
+
+            if (status & IRQ_RX_DONE) {
+                syslog(LOG_INFO, "IRQ: RX DONE");
+
+                if (medium_callback) {
+                    medium_callback(CAUSE_RX_DONE);
                 }
 
-                if (status & IRQ_PREAMBLE_DETECTED) {
-                    syslog(LOG_INFO, "IRQ: PREAMBLE DETECTED");
-                    crc_ok = true;
+                if (crc_ok) {
+                    payload_tx_rx = get_rx_buffer_status();
 
-                    if (medium_callback) {
-                        medium_callback(CAUSE_PREAMBLE_DETECTED);
+                    if (rx_done_callback) {
+                        rx_done_callback(payload_tx_rx);
                     }
                 }
+            }
 
-                if (status & IRQ_HEADER_VALID) {
-                    syslog(LOG_INFO, "IRQ: HEADER VALID");
+            if (status & IRQ_TX_DONE) {
+                syslog(LOG_INFO, "IRQ: TX DONE");
 
-                    if (medium_callback) {
-                        medium_callback(CAUSE_HEADER_VALID);
-                    }
+                if (medium_callback) {
+                    medium_callback(CAUSE_TX_DONE);
                 }
 
-                if (status & IRQ_HEADER_ERR) {
-                    syslog(LOG_INFO, "IRQ: HEADER ERR");
-
-                    if (medium_callback) {
-                        medium_callback(CAUSE_HEADER_ERR);
-                    }
-                }
-
-                if (status & IRQ_RX_DONE) {
-                    syslog(LOG_INFO, "IRQ: RX DONE");
-
-                    if (medium_callback) {
-                        medium_callback(CAUSE_RX_DONE);
-                    }
-
-                    if (crc_ok) {
-                        payload_tx_rx = get_rx_buffer_status();
-
-                        if (rx_done_callback) {
-                            rx_done_callback(payload_tx_rx);
-                        }
-
-                    }
-                }
-
-                if (status & IRQ_TX_DONE) {
-                    syslog(LOG_INFO, "IRQ: TX DONE");
-
-                    if (medium_callback) {
-                        medium_callback(CAUSE_TX_DONE);
-                    }
-
-                    if (tx_done_callback) {
-                        tx_done_callback();
-                    }
+                if (tx_done_callback) {
+                    tx_done_callback();
                 }
 
                 clear_irq_status(0x7F);
@@ -531,7 +503,6 @@ static void * irq_worker(void *p) {
         }
     }
 
-    gpiod_edge_event_buffer_free(buf);
     return NULL;
 }
 
@@ -539,187 +510,46 @@ static void * irq_worker(void *p) {
 
 bool sx126x_init_spi(const char *spidev, const char *cs_chip, uint8_t cs_pin) {
     spi_fd = open(spidev, O_RDWR);
-
-    if (spi_fd < 0) {
-        return false;
-    }
+    if (spi_fd < 0) return false;
 
     syslog(LOG_INFO, "SPI %s, CS GPIO %s:%i", spidev, cs_chip, (int) cs_pin);
-
-    struct gpiod_chip           *c    = gpiod_chip_open(cs_chip);
-
-    if (!c) return false;
-
-    struct gpiod_line_settings  *s    = gpiod_line_settings_new();
-    struct gpiod_line_config    *lcfg = gpiod_line_config_new();
-    struct gpiod_request_config *rcfg = gpiod_request_config_new();
-
-    gpiod_line_settings_set_direction(s, GPIOD_LINE_DIRECTION_OUTPUT);
-    gpiod_line_settings_set_output_value(s, GPIOD_LINE_VALUE_ACTIVE);
-
-    unsigned int offsets[] = { cs_pin };
-    gpiod_line_config_add_line_settings(lcfg, offsets, 1, s);
-    gpiod_request_config_set_consumer(rcfg, "sx126x_cs");
-
-    cs.req = gpiod_chip_request_lines(c, rcfg, lcfg);
-    cs.pin = cs_pin;
-
-    gpiod_line_settings_free(s);
-    gpiod_line_config_free(lcfg);
-    gpiod_request_config_free(rcfg);
-    gpiod_chip_close(c);
-
-    return cs.req != NULL;
+    cs = gpio_request(cs_chip, cs_pin, GPIO_DIR_OUTPUT, GPIO_VALUE_ACTIVE, "sx126x_cs");
+    return cs != NULL;
 }
 
 bool sx126x_init_rst(const char *chip, uint8_t pin) {
     syslog(LOG_INFO, "RST GPIO %s:%i", chip, (int) pin);
-
-    struct gpiod_chip           *c    = gpiod_chip_open(chip);
-
-    if (!c) return false;
-
-    struct gpiod_line_settings  *s    = gpiod_line_settings_new();
-    struct gpiod_line_config    *lcfg = gpiod_line_config_new();
-    struct gpiod_request_config *rcfg = gpiod_request_config_new();
-
-    gpiod_line_settings_set_direction(s, GPIOD_LINE_DIRECTION_OUTPUT);
-    gpiod_line_settings_set_output_value(s, GPIOD_LINE_VALUE_INACTIVE);
-
-    unsigned int offsets[] = { pin };
-    gpiod_line_config_add_line_settings(lcfg, offsets, 1, s);
-    gpiod_request_config_set_consumer(rcfg, "sx126x_rst");
-
-    rst.req = gpiod_chip_request_lines(c, rcfg, lcfg);
-    rst.pin = pin;
-
-    gpiod_line_settings_free(s);
-    gpiod_line_config_free(lcfg);
-    gpiod_request_config_free(rcfg);
-    gpiod_chip_close(c);
-
-    return rst.req != NULL;
+    rst = gpio_request(chip, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rst");
+    return rst != NULL;
 }
 
 bool sx126x_init_busy(const char *chip, uint8_t pin) {
     syslog(LOG_INFO, "Busy GPIO %s:%i", chip, (int) pin);
-
-    struct gpiod_chip           *c    = gpiod_chip_open(chip);
-
-    if (!c) return false;
-
-    struct gpiod_line_settings  *s    = gpiod_line_settings_new();
-    struct gpiod_line_config    *lcfg = gpiod_line_config_new();
-    struct gpiod_request_config *rcfg = gpiod_request_config_new();
-
-    gpiod_line_settings_set_direction(s, GPIOD_LINE_DIRECTION_INPUT);
-
-    unsigned int offsets[] = { pin };
-    gpiod_line_config_add_line_settings(lcfg, offsets, 1, s);
-    gpiod_request_config_set_consumer(rcfg, "sx126x_busy");
-
-    busy.req = gpiod_chip_request_lines(c, rcfg, lcfg);
-    busy.pin = pin;
-
-    gpiod_line_settings_free(s);
-    gpiod_line_config_free(lcfg);
-    gpiod_request_config_free(rcfg);
-    gpiod_chip_close(c);
-
-    return busy.req != NULL;
+    busy = gpio_request(chip, pin, GPIO_DIR_INPUT, GPIO_VALUE_INACTIVE, "sx126x_busy");
+    return busy != NULL;
 }
 
 bool sx126x_init_dio1(const char *chip, uint8_t pin) {
     syslog(LOG_INFO, "DIO1 GPIO %s:%i", chip, (int) pin);
-
-    struct gpiod_chip           *c    = gpiod_chip_open(chip);
-
-    if (!c) return false;
-
-    struct gpiod_line_settings  *s    = gpiod_line_settings_new();
-    struct gpiod_line_config    *lcfg = gpiod_line_config_new();
-    struct gpiod_request_config *rcfg = gpiod_request_config_new();
-
-    gpiod_line_settings_set_direction(s, GPIOD_LINE_DIRECTION_INPUT);
-    gpiod_line_settings_set_edge_detection(s, GPIOD_LINE_EDGE_RISING);
-
-    unsigned int offsets[] = { pin };
-    gpiod_line_config_add_line_settings(lcfg, offsets, 1, s);
-    gpiod_request_config_set_consumer(rcfg, "sx126x_dio1");
-
-    dio1.req = gpiod_chip_request_lines(c, rcfg, lcfg);
-    dio1.pin = pin;
-
-    gpiod_line_settings_free(s);
-    gpiod_line_config_free(lcfg);
-    gpiod_request_config_free(rcfg);
-    gpiod_chip_close(c);
-
-    if (!dio1.req) return false;
+    dio1 = gpio_request(chip, pin, GPIO_DIR_INPUT_EDGE_RISING, GPIO_VALUE_INACTIVE, "sx126x_dio1");
+    if (!dio1) return false;
 
     pthread_t thread;
     pthread_create(&thread, NULL, irq_worker, NULL);
     pthread_detach(thread);
-
     return true;
 }
 
 bool sx126x_init_tx_en(const char *chip, uint8_t pin) {
     syslog(LOG_INFO, "TX EN GPIO %s:%i", chip, (int) pin);
-
-    struct gpiod_chip           *c    = gpiod_chip_open(chip);
-
-    if (!c) return false;
-
-    struct gpiod_line_settings  *s    = gpiod_line_settings_new();
-    struct gpiod_line_config    *lcfg = gpiod_line_config_new();
-    struct gpiod_request_config *rcfg = gpiod_request_config_new();
-
-    gpiod_line_settings_set_direction(s, GPIOD_LINE_DIRECTION_OUTPUT);
-    gpiod_line_settings_set_output_value(s, GPIOD_LINE_VALUE_INACTIVE);
-
-    unsigned int offsets[] = { pin };
-    gpiod_line_config_add_line_settings(lcfg, offsets, 1, s);
-    gpiod_request_config_set_consumer(rcfg, "sx126x_tx_en");
-
-    tx_en.req = gpiod_chip_request_lines(c, rcfg, lcfg);
-    tx_en.pin = pin;
-
-    gpiod_line_settings_free(s);
-    gpiod_line_config_free(lcfg);
-    gpiod_request_config_free(rcfg);
-    gpiod_chip_close(c);
-
-    return tx_en.req != NULL;
+    tx_en = gpio_request(chip, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_tx_en");
+    return tx_en != NULL;
 }
 
 bool sx126x_init_rx_en(const char *chip, uint8_t pin) {
     syslog(LOG_INFO, "RX EN GPIO %s:%i", chip, (int) pin);
-
-    struct gpiod_chip           *c    = gpiod_chip_open(chip);
-
-    if (!c) return false;
-
-    struct gpiod_line_settings  *s    = gpiod_line_settings_new();
-    struct gpiod_line_config    *lcfg = gpiod_line_config_new();
-    struct gpiod_request_config *rcfg = gpiod_request_config_new();
-
-    gpiod_line_settings_set_direction(s, GPIOD_LINE_DIRECTION_OUTPUT);
-    gpiod_line_settings_set_output_value(s, GPIOD_LINE_VALUE_INACTIVE);
-
-    unsigned int offsets[] = { pin };
-    gpiod_line_config_add_line_settings(lcfg, offsets, 1, s);
-    gpiod_request_config_set_consumer(rcfg, "sx126x_rx_en");
-
-    rx_en.req = gpiod_chip_request_lines(c, rcfg, lcfg);
-    rx_en.pin = pin;
-
-    gpiod_line_settings_free(s);
-    gpiod_line_config_free(lcfg);
-    gpiod_request_config_free(rcfg);
-    gpiod_chip_close(c);
-
-    return rx_en.req != NULL;
+    rx_en = gpio_request(chip, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rx_en");
+    return rx_en != NULL;
 }
 
 void sx126x_set_rx_done_callback(sx126x_rx_done_callback_t callback) {
@@ -739,9 +569,9 @@ void sx126x_set_timeout_callback(sx126x_timeout_callback_t callback) {
 }
 
 bool sx126x_begin() {
-    gpiod_line_request_set_value(rst.req, rst.pin, GPIOD_LINE_VALUE_INACTIVE);
+    gpio_set(rst, GPIO_VALUE_INACTIVE);
     usleep(10000);
-    gpiod_line_request_set_value(rst.req, rst.pin, GPIOD_LINE_VALUE_ACTIVE);
+    gpio_set(rst, GPIO_VALUE_ACTIVE);
     usleep(10000);
 
     state = SX126X_IDLE;
