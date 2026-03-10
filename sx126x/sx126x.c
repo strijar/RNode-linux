@@ -125,8 +125,21 @@ static sx126x_medium_callback_t     medium_callback = NULL;
 static sx126x_timeout_callback_t    timeout_callback = NULL;
 
 static void wait_on_busy() {
+    uint16_t count = 0;
+
     while (gpiod_line_get_value(busy_line) == 1) {
-        usleep(100);
+        usleep(1000);
+
+        count++;
+
+        if (count > 100) {
+            syslog(LOG_INFO, "Busy: Timeout");
+
+            if (timeout_callback) {
+                timeout_callback();
+            }
+            return;
+        }
     }
 }
 
