@@ -487,6 +487,7 @@ void rnode_tx_done() {
         tx_buf(buf_tx, len_tx, FLAG_SPLIT);
         len_tx = 0;
     } else {
+        sx126x_recalibrate();
         sx126x_request(RX_CONTINUOUS);
     }
 }

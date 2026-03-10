@@ -112,6 +112,9 @@ static uint8_t              save_cr;
 static uint32_t             save_bw;
 static bool                 save_ldro;
 
+static uint8_t              save_calibrate_min;
+static uint8_t              save_calibrate_max;
+
 static uint32_t             preamble_symbols;
 static float                symbol_rate;
 static float                symbol_time_ms;
@@ -713,29 +716,34 @@ void sx126x_set_dio3_txco_ctrl(uint8_t voltage, uint16_t delay) {
     calibrate(0xFF);
 }
 
-void sx126x_set_freq(uint64_t x) {
-    uint8_t min;
-    uint8_t max;
+void sx126x_recalibrate() {
+    set_standby(STANDBY_RC);
+    calibrate(0xFF);
 
+    wait_on_busy();
+    calibrate_image(save_calibrate_min, save_calibrate_max);
+}
+
+void sx126x_set_freq(uint64_t x) {
     if (x < 446000000) {
-        min = CAL_IMG_430;
-        max = CAL_IMG_440;
+        save_calibrate_min = CAL_IMG_430;
+        save_calibrate_max = CAL_IMG_440;
     } else if (x < 734000000) {
-        min = CAL_IMG_470;
-        max = CAL_IMG_510;
+        save_calibrate_min = CAL_IMG_470;
+        save_calibrate_max = CAL_IMG_510;
     } else if (x < 828000000) {
-        min = CAL_IMG_779;
-        max = CAL_IMG_787;
+        save_calibrate_min = CAL_IMG_779;
+        save_calibrate_max = CAL_IMG_787;
     } else if (x < 877000000) {
-        min = CAL_IMG_863;
-        max = CAL_IMG_870;
+        save_calibrate_min = CAL_IMG_863;
+        save_calibrate_max = CAL_IMG_870;
     } else {
-        min = CAL_IMG_902;
-        max = CAL_IMG_928;
+        save_calibrate_min = CAL_IMG_902;
+        save_calibrate_max = CAL_IMG_928;
     }
 
     wait_on_busy();
-    calibrate_image(min, max);
+    calibrate_image(save_calibrate_min, save_calibrate_max);
 
     uint64_t    freq = x * 33554432 / 32000000;
     uint8_t     msg[] = { 0x86, (freq >> 24) & 0xFF, (freq >> 16) & 0xFF, (freq >> 8) & 0xFF, freq & 0xFF };

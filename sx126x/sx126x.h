@@ -135,3 +135,5 @@ uint32_t sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms)
 int8_t sx126x_current_rssi();
 state_t sx126x_get_state();
 status_mode_t sx126x_get_status_mode();
+
+void sx126x_recalibrate();
