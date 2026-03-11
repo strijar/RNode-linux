@@ -84,7 +84,7 @@ void gpio_set(gpio_line_t *line, gpio_value_t val) {
 }
 
 int gpio_read_edge_rising(gpio_line_t *line) {
-    struct timespec timeout = { .tv_sec = 1, .tv_nsec = 0 };
+    struct timespec timeout = { .tv_sec = 60, .tv_nsec = 0 };
     int res = gpiod_line_event_wait(line->line, &timeout);
 
     if (res < 0) return -1;
