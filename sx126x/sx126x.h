@@ -99,12 +99,12 @@ typedef void (*sx126x_tx_done_callback_t)(void);
 typedef void (*sx126x_medium_callback_t)(cause_medium_t cause);
 typedef void (*sx126x_timeout_callback_t)(void);
 
-bool sx126x_init_spi(const char *spidev, const char *cs_chip, uint8_t cs_pin);
-bool sx126x_init_rst(const char *chip, uint8_t pin);
-bool sx126x_init_busy(const char *chip, uint8_t pin);
-bool sx126x_init_dio1(const char *chip, uint8_t pin);
-bool sx126x_init_tx_en(const char *chip, uint8_t pin);
-bool sx126x_init_rx_en(const char *chip, uint8_t pin);
+bool sx126x_init_spi(const char *spidev, uint8_t cs_port, uint8_t cs_pin);
+bool sx126x_init_rst(uint8_t port, uint8_t pin);
+bool sx126x_init_busy(uint8_t port, uint8_t pin);
+bool sx126x_init_dio1(uint8_t port, uint8_t pin);
+bool sx126x_init_tx_en(uint8_t port, uint8_t pin);
+bool sx126x_init_rx_en(uint8_t port, uint8_t pin);
 
 void sx126x_set_rx_done_callback(sx126x_rx_done_callback_t callback);
 void sx126x_set_tx_done_callback(sx126x_tx_done_callback_t callback);

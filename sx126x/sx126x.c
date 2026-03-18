@@ -508,30 +508,30 @@ static void * irq_worker(void *p) {
 
 /* * */
 
-bool sx126x_init_spi(const char *spidev, const char *cs_chip, uint8_t cs_pin) {
+bool sx126x_init_spi(const char *spidev, uint8_t cs_port, uint8_t cs_pin) {
     spi_fd = open(spidev, O_RDWR);
     if (spi_fd < 0) return false;
 
-    syslog(LOG_INFO, "SPI %s, CS GPIO %s:%i", spidev, cs_chip, (int) cs_pin);
-    cs = gpio_request(cs_chip, cs_pin, GPIO_DIR_OUTPUT, GPIO_VALUE_ACTIVE, "sx126x_cs");
+    syslog(LOG_INFO, "SPI %s, CS GPIO chip%u:%u", spidev, (unsigned) cs_port, (unsigned) cs_pin);
+    cs = gpio_request(cs_port, cs_pin, GPIO_DIR_OUTPUT, GPIO_VALUE_ACTIVE, "sx126x_cs");
     return cs != NULL;
 }
 
-bool sx126x_init_rst(const char *chip, uint8_t pin) {
-    syslog(LOG_INFO, "RST GPIO %s:%i", chip, (int) pin);
-    rst = gpio_request(chip, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rst");
+bool sx126x_init_rst(uint8_t port, uint8_t pin) {
+    syslog(LOG_INFO, "RST GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    rst = gpio_request(port, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rst");
     return rst != NULL;
 }
 
-bool sx126x_init_busy(const char *chip, uint8_t pin) {
-    syslog(LOG_INFO, "Busy GPIO %s:%i", chip, (int) pin);
-    busy = gpio_request(chip, pin, GPIO_DIR_INPUT, GPIO_VALUE_INACTIVE, "sx126x_busy");
+bool sx126x_init_busy(uint8_t port, uint8_t pin) {
+    syslog(LOG_INFO, "Busy GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    busy = gpio_request(port, pin, GPIO_DIR_INPUT, GPIO_VALUE_INACTIVE, "sx126x_busy");
     return busy != NULL;
 }
 
-bool sx126x_init_dio1(const char *chip, uint8_t pin) {
-    syslog(LOG_INFO, "DIO1 GPIO %s:%i", chip, (int) pin);
-    dio1 = gpio_request(chip, pin, GPIO_DIR_INPUT_EDGE_RISING, GPIO_VALUE_INACTIVE, "sx126x_dio1");
+bool sx126x_init_dio1(uint8_t port, uint8_t pin) {
+    syslog(LOG_INFO, "DIO1 GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    dio1 = gpio_request(port, pin, GPIO_DIR_INPUT_EDGE_RISING, GPIO_VALUE_INACTIVE, "sx126x_dio1");
     if (!dio1) return false;
 
     pthread_t thread;
@@ -540,15 +540,15 @@ bool sx126x_init_dio1(const char *chip, uint8_t pin) {
     return true;
 }
 
-bool sx126x_init_tx_en(const char *chip, uint8_t pin) {
-    syslog(LOG_INFO, "TX EN GPIO %s:%i", chip, (int) pin);
-    tx_en = gpio_request(chip, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_tx_en");
+bool sx126x_init_tx_en(uint8_t port, uint8_t pin) {
+    syslog(LOG_INFO, "TX EN GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    tx_en = gpio_request(port, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_tx_en");
     return tx_en != NULL;
 }
 
-bool sx126x_init_rx_en(const char *chip, uint8_t pin) {
-    syslog(LOG_INFO, "RX EN GPIO %s:%i", chip, (int) pin);
-    rx_en = gpio_request(chip, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rx_en");
+bool sx126x_init_rx_en(uint8_t port, uint8_t pin) {
+    syslog(LOG_INFO, "RX EN GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    rx_en = gpio_request(port, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rx_en");
     return rx_en != NULL;
 }
 

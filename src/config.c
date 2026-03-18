@@ -11,7 +11,7 @@
 #include "config.h"
 
 const cyaml_schema_field_t gpio_fields_schema[] = {
-    CYAML_FIELD_STRING_PTR("chip",      CYAML_FLAG_POINTER, config_gpio_t, chip, 0, CYAML_UNLIMITED),
+    CYAML_FIELD_UINT("port",            CYAML_FLAG_DEFAULT, config_gpio_t, port),
     CYAML_FIELD_UINT("pin",             CYAML_FLAG_DEFAULT, config_gpio_t, pin),
     CYAML_FIELD_END
 };

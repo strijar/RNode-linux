@@ -2,10 +2,10 @@
 # Board RNS-Gate
 
 spi: /dev/spidev1.0
-cs:   { chip: /dev/gpiochip0, pin: 13 }
-rst:  { chip: /dev/gpiochip0, pin: 6  }
-busy: { chip: /dev/gpiochip0, pin: 11 }
-dio1: { chip: /dev/gpiochip0, pin: 12 }
-rx_en: { chip: /dev/gpiochip0, pin: 2 }
-tx_en: { chip: /dev/gpiochip0, pin: 18 }
+cs:   { port: 0, pin: 13 }
+rst:  { port: 0, pin: 6  }
+busy: { port: 0, pin: 11 }
+dio1: { port: 0, pin: 12 }
+rx_en: { port: 0, pin: 2 }
+tx_en: { port: 0, pin: 18 }
 tcp_port: 7633

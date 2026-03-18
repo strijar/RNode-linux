@@ -5,6 +5,7 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <errno.h>
 #include <gpiod.h>
 
@@ -16,13 +17,16 @@ struct gpio_line {
     struct gpiod_edge_event_buffer *event_buf;
 };
 
-gpio_line_t *gpio_request(const char   *chip,
+gpio_line_t *gpio_request(unsigned int  chip,
                           unsigned int  pin,
                           gpio_dir_t    dir,
                           gpio_value_t  initial,
                           const char   *consumer)
 {
-    struct gpiod_chip *chip_h = gpiod_chip_open(chip);
+    char chip_path[32];
+    snprintf(chip_path, sizeof(chip_path), "/dev/gpiochip%u", chip);
+
+    struct gpiod_chip *chip_h = gpiod_chip_open(chip_path);
     if (!chip_h) return NULL;
 
     struct gpiod_line_settings *settings = gpiod_line_settings_new();

@@ -14,18 +14,18 @@ struct gpio_line {
     struct gpiod_line *line;
 };
 
-gpio_line_t *gpio_request(const char   *chip_path,
+gpio_line_t *gpio_request(unsigned int  chip,
                           unsigned int  pin,
                           gpio_dir_t    dir,
                           gpio_value_t  initial,
                           const char   *consumer)
 {
-    struct gpiod_chip *chip = gpiod_chip_open(chip);
+    struct gpiod_chip *chip_h = gpiod_chip_open_by_number(chip);
     if (!chip) return NULL;
 
-    struct gpiod_line *line = gpiod_chip_get_line(chip, pin);
+    struct gpiod_line *line = gpiod_chip_get_line(chip_h, pin);
     if (!line) {
-        gpiod_chip_close(chip);
+        gpiod_chip_close(chip_h);
         return NULL;
     }
 
@@ -53,7 +53,7 @@ gpio_line_t *gpio_request(const char   *chip_path,
             break;
     }
 
-    gpiod_chip_close(chip);
+    gpiod_chip_close(chip_h);
 
     if (result < 0) return NULL;
 

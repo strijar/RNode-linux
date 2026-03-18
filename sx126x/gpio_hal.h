@@ -20,7 +20,7 @@ typedef enum {
 } gpio_value_t;
 
 /* Allocate and configure a GPIO line. Returns NULL on failure. */
-gpio_line_t *gpio_request(const char   *chip,
+gpio_line_t *gpio_request(unsigned int  chip,
                           unsigned int  pin,
                           gpio_dir_t    dir,
                           gpio_value_t  initial,

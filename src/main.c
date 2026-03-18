@@ -28,32 +28,32 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (!sx126x_init_spi(config->spi, config->cs.chip, config->cs.pin)) {
+    if (!sx126x_init_spi(config->spi, config->cs.port, config->cs.pin)) {
         syslog(LOG_ERR, "SPI init");
         return 1;
     }
 
-    if (!sx126x_init_rst(config->rst.chip, config->rst.pin)) {
+    if (!sx126x_init_rst(config->rst.port, config->rst.pin)) {
         syslog(LOG_ERR, "RST pin");
         return 1;
     }
 
-    if (!sx126x_init_busy(config->busy.chip, config->busy.pin)) {
+    if (!sx126x_init_busy(config->busy.port, config->busy.pin)) {
         syslog(LOG_ERR, "Busy pin");
         return 1;
     }
 
-    if (!sx126x_init_dio1(config->dio1.chip, config->dio1.pin)) {
+    if (!sx126x_init_dio1(config->dio1.port, config->dio1.pin)) {
         syslog(LOG_ERR, "DIO1 pin");
         return 1;
     }
 
-    if (!sx126x_init_tx_en(config->tx_en.chip, config->tx_en.pin)) {
+    if (!sx126x_init_tx_en(config->tx_en.port, config->tx_en.pin)) {
         syslog(LOG_ERR, "TX EN pin");
         return 1;
     }
 
-    if (!sx126x_init_rx_en(config->rx_en.chip, config->rx_en.pin)) {
+    if (!sx126x_init_rx_en(config->rx_en.port, config->rx_en.pin)) {
         syslog(LOG_ERR, "RX EN pin");
         return 1;
     }
