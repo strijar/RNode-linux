@@ -10,7 +10,8 @@ project(rnode)
 
 add_executable(${PROJECT_NAME})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE gpiod m cyaml)
+find_package(Threads REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE gpiod m cyaml Threads::Threads)
 
 add_subdirectory(src)
 add_subdirectory(sx126x)
