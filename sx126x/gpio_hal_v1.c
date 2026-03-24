@@ -21,7 +21,7 @@ gpio_line_t *gpio_request(unsigned int  chip,
                           const char   *consumer)
 {
     struct gpiod_chip *chip_h = gpiod_chip_open_by_number(chip);
-    if (!chip) return NULL;
+    if (!chip_h) return NULL;
 
     struct gpiod_line *line = gpiod_chip_get_line(chip_h, pin);
     if (!line) {
@@ -53,13 +53,16 @@ gpio_line_t *gpio_request(unsigned int  chip,
             break;
     }
 
-    gpiod_chip_close(chip_h);
-
-    if (result < 0) return NULL;
+    if (result < 0) {
+        gpiod_line_release(line);
+        gpiod_chip_close(chip_h);
+        return NULL;
+    }
 
     gpio_line_t *gpio = malloc(sizeof(*gpio));
     if (!gpio) {
         gpiod_line_release(line);
+        gpiod_chip_close(chip_h);
         return NULL;
     }
 
