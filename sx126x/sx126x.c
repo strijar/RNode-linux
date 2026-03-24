@@ -10,13 +10,14 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <math.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
-#include <gpiod.h>
+#include "gpio_hal.h"
 #include <pthread.h>
 
 #include "sx126x.h"
@@ -91,12 +92,12 @@ typedef enum {
     IRQ_NONE                = 0x0000
 } irq_t;
 
-static struct gpiod_line    *cs_line = NULL;
-static struct gpiod_line    *rst_line = NULL;
-static struct gpiod_line    *busy_line = NULL;
-static struct gpiod_line    *dio1_line = NULL;
-static struct gpiod_line    *tx_en_line = NULL;
-static struct gpiod_line    *rx_en_line = NULL;
+static gpio_line_t  *cs     = NULL;
+static gpio_line_t  *rst    = NULL;
+static gpio_line_t  *busy   = NULL;
+static gpio_line_t  *dio1   = NULL;
+static gpio_line_t  *tx_en  = NULL;
+static gpio_line_t  *rx_en  = NULL;
 static int                  spi_fd;
 
 static uint8_t              fifo_tx_addr_ptr = 0;
@@ -130,7 +131,7 @@ static sx126x_timeout_callback_t    timeout_callback = NULL;
 static void wait_on_busy() {
     uint16_t count = 0;
 
-    while (gpiod_line_get_value(busy_line) == 1) {
+    while (gpio_get(busy) == GPIO_VALUE_ACTIVE) {
         usleep(1000);
 
         count++;
@@ -149,37 +150,21 @@ static void wait_on_busy() {
 static void switch_ant() {
     switch (state) {
         case SX126X_IDLE:
-            if (rx_en_line) {
-                gpiod_line_set_value(rx_en_line, 0);
-            }
-            if (tx_en_line) {
-                gpiod_line_set_value(tx_en_line, 0);
-            }
+            if (rx_en) gpio_set(rx_en, GPIO_VALUE_INACTIVE);
+            if (tx_en) gpio_set(tx_en, GPIO_VALUE_INACTIVE);
             break;
 
         case SX126X_RX_SINGLE:
         case SX126X_RX_CONTINUOUS:
-            if (tx_en_line) {
-                gpiod_line_set_value(tx_en_line, 0);
-            }
-
+            if (tx_en) gpio_set(tx_en, GPIO_VALUE_INACTIVE);
             usleep(100);
-
-            if (rx_en_line) {
-                gpiod_line_set_value(rx_en_line, 1);
-            }
+            if (rx_en) gpio_set(rx_en, GPIO_VALUE_ACTIVE);
             break;
 
         case SX126X_TX:
-            if (rx_en_line) {
-                gpiod_line_set_value(rx_en_line, 0);
-            }
-
+            if (rx_en) gpio_set(rx_en, GPIO_VALUE_INACTIVE);
             usleep(100);
-
-            if (tx_en_line) {
-                gpiod_line_set_value(tx_en_line, 1);
-            }
+            if (tx_en) gpio_set(tx_en, GPIO_VALUE_ACTIVE);
             break;
     }
 }
@@ -196,9 +181,9 @@ static bool write_bytes(const uint8_t *buf, size_t len) {
         .cs_change = 0,
     };
 
-    gpiod_line_set_value(cs_line, 0);
+    gpio_set(cs, GPIO_VALUE_INACTIVE);
     int l = ioctl(spi_fd, SPI_IOC_MESSAGE(1), &k);
-    gpiod_line_set_value(cs_line, 1);
+    gpio_set(cs, GPIO_VALUE_ACTIVE);
 
     return (l == k.len);
 }
@@ -222,9 +207,9 @@ static bool write_read_bytes(const uint8_t *buf, size_t buf_len, uint8_t *res, s
         }
     };
 
-    gpiod_line_set_value(cs_line, 0);
+    gpio_set(cs, GPIO_VALUE_INACTIVE);
     int l = ioctl(spi_fd, SPI_IOC_MESSAGE(2), &k);
-    gpiod_line_set_value(cs_line, 1);
+    gpio_set(cs, GPIO_VALUE_ACTIVE);
 
     return (l == (buf_len + res_len));
 }
@@ -240,9 +225,9 @@ static bool read_bytes(const uint8_t *buf, uint8_t *res, size_t len) {
         .cs_change = 0,
     };
 
-    gpiod_line_set_value(cs_line, 0);
+    gpio_set(cs, GPIO_VALUE_INACTIVE);
     int l = ioctl(spi_fd, SPI_IOC_MESSAGE(1), &k);
-    gpiod_line_set_value(cs_line, 1);
+    gpio_set(cs, GPIO_VALUE_ACTIVE);
 
     return (l == k.len);
 }
@@ -429,8 +414,7 @@ static void set_irq_mask() {
 /* * */
 
 static void * irq_worker(void *p) {
-    struct  gpiod_line_event event;
-    bool    crc_ok = true;
+    bool crc_ok = true;
 
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
@@ -440,12 +424,12 @@ static void * irq_worker(void *p) {
     }
 
     while (true) {
-        struct timespec timeout;
+        int res = gpio_read_edge_rising(dio1);
 
-        timeout.tv_sec = 60;
-        timeout.tv_nsec = 0;
-
-        int res = gpiod_line_event_wait(dio1_line, &timeout);
+        if (res < 0) {
+            syslog(LOG_ERR, "IRQ: edge event wait error: %s", strerror(errno));
+            break;
+        }
 
         if (res == 0) {
             syslog(LOG_INFO, "IRQ: Timeout");
@@ -453,72 +437,64 @@ static void * irq_worker(void *p) {
             if (timeout_callback) {
                 timeout_callback();
             }
-        } else if (res == 1) {
-            if (gpiod_line_event_read(dio1_line, &event) != 0) {
-                continue;
+        } else {
+            uint16_t status = get_irq_status();
+
+            if (status & IRQ_CRC_ERR) {
+                syslog(LOG_INFO, "IRQ: CRC ERR");
+                crc_ok = false;
             }
 
-            if (event.event_type == GPIOD_LINE_EVENT_RISING_EDGE) {
-                uint16_t    status = get_irq_status();
+            if (status & IRQ_PREAMBLE_DETECTED) {
+                syslog(LOG_INFO, "IRQ: PREAMBLE DETECTED");
+                crc_ok = true;
 
-                if (status & IRQ_CRC_ERR) {
-                    syslog(LOG_INFO, "IRQ: CRC ERR");
+                if (medium_callback) {
+                    medium_callback(CAUSE_PREAMBLE_DETECTED);
+                }
+            }
 
-                    crc_ok = false;
+            if (status & IRQ_HEADER_VALID) {
+                syslog(LOG_INFO, "IRQ: HEADER VALID");
+
+                if (medium_callback) {
+                    medium_callback(CAUSE_HEADER_VALID);
+                }
+            }
+
+            if (status & IRQ_HEADER_ERR) {
+                syslog(LOG_INFO, "IRQ: HEADER ERR");
+
+                if (medium_callback) {
+                    medium_callback(CAUSE_HEADER_ERR);
+                }
+            }
+
+            if (status & IRQ_RX_DONE) {
+                syslog(LOG_INFO, "IRQ: RX DONE");
+
+                if (medium_callback) {
+                    medium_callback(CAUSE_RX_DONE);
                 }
 
-                if (status & IRQ_PREAMBLE_DETECTED) {
-                    syslog(LOG_INFO, "IRQ: PREAMBLE DETECTED");
-                    crc_ok = true;
+                if (crc_ok) {
+                    payload_tx_rx = get_rx_buffer_status();
 
-                    if (medium_callback) {
-                        medium_callback(CAUSE_PREAMBLE_DETECTED);
+                    if (rx_done_callback) {
+                        rx_done_callback(payload_tx_rx);
                     }
                 }
+            }
 
-                if (status & IRQ_HEADER_VALID) {
-                    syslog(LOG_INFO, "IRQ: HEADER VALID");
+            if (status & IRQ_TX_DONE) {
+                syslog(LOG_INFO, "IRQ: TX DONE");
 
-                    if (medium_callback) {
-                        medium_callback(CAUSE_HEADER_VALID);
-                    }
+                if (medium_callback) {
+                    medium_callback(CAUSE_TX_DONE);
                 }
 
-                if (status & IRQ_HEADER_ERR) {
-                    syslog(LOG_INFO, "IRQ: HEADER ERR");
-
-                    if (medium_callback) {
-                        medium_callback(CAUSE_HEADER_ERR);
-                    }
-                }
-
-                if (status & IRQ_RX_DONE) {
-                    syslog(LOG_INFO, "IRQ: RX DONE");
-
-                    if (medium_callback) {
-                        medium_callback(CAUSE_RX_DONE);
-                    }
-
-                    if (crc_ok) {
-                        payload_tx_rx = get_rx_buffer_status();
-
-                        if (rx_done_callback) {
-                            rx_done_callback(payload_tx_rx);
-                        }
-
-                    }
-                }
-
-                if (status & IRQ_TX_DONE) {
-                    syslog(LOG_INFO, "IRQ: TX DONE");
-
-                    if (medium_callback) {
-                        medium_callback(CAUSE_TX_DONE);
-                    }
-
-                    if (tx_done_callback) {
-                        tx_done_callback();
-                    }
+                if (tx_done_callback) {
+                    tx_done_callback();
                 }
 
                 clear_irq_status(0x7F);
@@ -526,139 +502,54 @@ static void * irq_worker(void *p) {
             }
         }
     }
+
+    return NULL;
 }
 
 /* * */
 
 bool sx126x_init_spi(const char *spidev, uint8_t cs_port, uint8_t cs_pin) {
     spi_fd = open(spidev, O_RDWR);
+    if (spi_fd < 0) return false;
 
-    if (spi_fd < 0) {
-        return false;
-    }
-
-    syslog(LOG_INFO, "SPI %s, CS GPIO %i:%i", spidev, (int) cs_port, (int) cs_pin);
-
-    struct gpiod_chip *chip = gpiod_chip_open_by_number(cs_port);
-
-    if (!chip) {
-        return false;
-    }
-
-    cs_line = gpiod_chip_get_line(chip, cs_pin);
-
-    if (!cs_line) {
-        return false;
-    }
-
-    gpiod_line_request_output(cs_line, "sx126x_cs", 1);
-
-    return true;
+    syslog(LOG_INFO, "SPI %s, CS GPIO chip%u:%u", spidev, (unsigned) cs_port, (unsigned) cs_pin);
+    cs = gpio_request(cs_port, cs_pin, GPIO_DIR_OUTPUT, GPIO_VALUE_ACTIVE, "sx126x_cs");
+    return cs != NULL;
 }
 
 bool sx126x_init_rst(uint8_t port, uint8_t pin) {
-    struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
-
-    syslog(LOG_INFO, "RST GPIO %i:%i", (int) port, (int) pin);
-
-    if (!chip) {
-        return false;
-    }
-
-    rst_line = gpiod_chip_get_line(chip, pin);
-
-    if (!rst_line) {
-        return false;
-    }
-
-    gpiod_line_request_output(rst_line, "sx126x_rst", 0);
-
-    return true;
+    syslog(LOG_INFO, "RST GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    rst = gpio_request(port, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rst");
+    return rst != NULL;
 }
 
 bool sx126x_init_busy(uint8_t port, uint8_t pin) {
-    struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
-
-    syslog(LOG_INFO, "Busy GPIO %i:%i", (int) port, (int) pin);
-
-    if (!chip) {
-        return false;
-    }
-
-    busy_line = gpiod_chip_get_line(chip, pin);
-
-    if (!busy_line) {
-        return false;
-    }
-
-    gpiod_line_request_input(busy_line, "sx126x_busy");
-
-    return true;
+    syslog(LOG_INFO, "Busy GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    busy = gpio_request(port, pin, GPIO_DIR_INPUT, GPIO_VALUE_INACTIVE, "sx126x_busy");
+    return busy != NULL;
 }
 
 bool sx126x_init_dio1(uint8_t port, uint8_t pin) {
-    struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
-
-    syslog(LOG_INFO, "DIO1 GPIO %i:%i", (int) port, (int) pin);
-
-    if (!chip) {
-        return false;
-    }
-
-    dio1_line = gpiod_chip_get_line(chip, pin);
-
-    if (!dio1_line) {
-        return false;
-    }
-
-    gpiod_line_request_both_edges_events(dio1_line, "sx126x_dio1");
+    syslog(LOG_INFO, "DIO1 GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    dio1 = gpio_request(port, pin, GPIO_DIR_INPUT_EDGE_RISING, GPIO_VALUE_INACTIVE, "sx126x_dio1");
+    if (!dio1) return false;
 
     pthread_t thread;
-
     pthread_create(&thread, NULL, irq_worker, NULL);
     pthread_detach(thread);
-
     return true;
 }
 
 bool sx126x_init_tx_en(uint8_t port, uint8_t pin) {
-    struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
-
-    syslog(LOG_INFO, "TX EN GPIO %i:%i", (int) port, (int) pin);
-
-    if (!chip) {
-        return false;
-    }
-
-    tx_en_line = gpiod_chip_get_line(chip, pin);
-
-    if (!tx_en_line) {
-        return false;
-    }
-
-    gpiod_line_request_output(tx_en_line, "sx126x_tx_en", 0);
-
-    return true;
+    syslog(LOG_INFO, "TX EN GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    tx_en = gpio_request(port, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_tx_en");
+    return tx_en != NULL;
 }
 
 bool sx126x_init_rx_en(uint8_t port, uint8_t pin) {
-    struct gpiod_chip *chip = gpiod_chip_open_by_number(port);
-
-    syslog(LOG_INFO, "RX EN GPIO %i:%i", (int) port, (int) pin);
-
-    if (!chip) {
-        return false;
-    }
-
-    rx_en_line = gpiod_chip_get_line(chip, pin);
-
-    if (!rx_en_line) {
-        return false;
-    }
-
-    gpiod_line_request_output(rx_en_line, "sx126x_rx_en", 0);
-
-    return true;
+    syslog(LOG_INFO, "RX EN GPIO chip%u:%u", (unsigned) port, (unsigned) pin);
+    rx_en = gpio_request(port, pin, GPIO_DIR_OUTPUT, GPIO_VALUE_INACTIVE, "sx126x_rx_en");
+    return rx_en != NULL;
 }
 
 void sx126x_set_rx_done_callback(sx126x_rx_done_callback_t callback) {
@@ -678,9 +569,9 @@ void sx126x_set_timeout_callback(sx126x_timeout_callback_t callback) {
 }
 
 bool sx126x_begin() {
-    gpiod_line_set_value(rst_line, 0);
+    gpio_set(rst, GPIO_VALUE_INACTIVE);
     usleep(10000);
-    gpiod_line_set_value(rst_line, 1);
+    gpio_set(rst, GPIO_VALUE_ACTIVE);
     usleep(10000);
 
     state = SX126X_IDLE;
@@ -912,11 +803,9 @@ void sx126x_packet_signal_raw(uint8_t *rssi, int8_t *snr, uint8_t *signal_rssi) 
 }
 
 int8_t sx126x_current_rssi() {
-    int8_t rssi;
-
     wait_on_busy();
 
-    return -get_current_rssi(&rssi) / 2;
+    return -get_current_rssi() / 2;
 }
 
 uint32_t sx126x_air_time(uint16_t len, uint32_t *preamble_ms, uint32_t *data_ms) {
